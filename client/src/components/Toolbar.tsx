@@ -167,23 +167,35 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
                       
                       nodes.forEach(node => {
                         types.forEach(type => {
-                          addOutputRequest({
-                            elementId: node.id,
-                            elementType: "node",
-                            requestType: type,
-                            variables: [...variables]
-                          });
+                          const exists = outputRequests.some(req => 
+                            req.elementId === node.id && 
+                            req.requestType === type
+                          );
+                          if (!exists) {
+                            addOutputRequest({
+                              elementId: node.id,
+                              elementType: "node",
+                              requestType: type,
+                              variables: [...variables]
+                            });
+                          }
                         });
                       });
                       
                       edges.forEach(edge => {
                         types.forEach(type => {
-                          addOutputRequest({
-                            elementId: edge.id,
-                            elementType: "edge",
-                            requestType: type,
-                            variables: [...variables]
-                          });
+                          const exists = outputRequests.some(req => 
+                            req.elementId === edge.id && 
+                            req.requestType === type
+                          );
+                          if (!exists) {
+                            addOutputRequest({
+                              elementId: edge.id,
+                              elementType: "edge",
+                              requestType: type,
+                              variables: [...variables]
+                            });
+                          }
                         });
                       });
                     }}
@@ -226,14 +238,14 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
                     {availableVars.map(v => (
                       <div key={v} className="flex items-center gap-2">
                         <Checkbox 
-                          id={`var-${v}`} 
+                          id={`toolbar-var-${v}`} 
                           checked={selectedVars.includes(v)}
                           onCheckedChange={(checked) => {
                             if (checked) setSelectedVars([...selectedVars, v]);
                             else setSelectedVars(selectedVars.filter(sv => sv !== v));
                           }}
                         />
-                        <Label htmlFor={`var-${v}`}>{v}</Label>
+                        <Label htmlFor={`toolbar-var-${v}`}>{v}</Label>
                       </div>
                     ))}
                   </div>
@@ -249,7 +261,7 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
                     const displayLabel = String(el?.data?.nodeNumber || el?.data?.label || req.elementId);
                     return (
                       <div key={req.id} className="flex items-center justify-between text-sm py-1 border-b">
-                        <span>{displayLabel}: {req.variables.join(', ')}</span>
+                        <span>{displayLabel} ({req.requestType}): {req.variables.join(', ')}</span>
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeOutputRequest(req.id)}>
                           <Trash2 className="w-3 h-3" />
                         </Button>

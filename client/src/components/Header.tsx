@@ -584,23 +584,169 @@ export function Header({
                             // Add requests for all nodes
                             nodes.forEach(node => {
                               types.forEach(type => {
-                                addOutputRequest({
-                                  elementId: node.id,
-                                  elementType: "node",
-                                  requestType: type,
-                                  variables: [...variables]
-                                });
+                                const exists = outputRequests.some(req => 
+                                  req.elementId === node.id && 
+                                  req.requestType === type
+                                );
+                                if (!exists) {
+                                  addOutputRequest({
+                                    elementId: node.id,
+                                    elementType: "node",
+                                    requestType: type,
+                                    variables: [...variables]
+                                  });
+                                }
                               });
                             });
                             
                             // Add requests for all edges
                             edges.forEach(edge => {
                               types.forEach(type => {
-                                addOutputRequest({
-                                  elementId: edge.id,
-                                  elementType: "edge",
-                                  requestType: type,
-                                  variables: [...variables]
+                                const exists = outputRequests.some(req => 
+                                  req.elementId === edge.id && 
+                                  req.requestType === type
+                                );
+                                if (!exists) {
+                                  addOutputRequest({
+                                    elementId: edge.id,
+                                    elementType: "edge",
+                                    requestType: type,
+                                    variables: [...variables]
+                                  });
+                                }
+                              });
+                            });
+                          }}
+                        >
+                          Select All
+                        </Button>
+                      </div>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label>Select Element</Label>
+                        <Select
+                          value={selectedElementId}
+                          onValueChange={setSelectedElementId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select element..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_" disabled>
+                              Nodes
+                            </SelectItem>
+                            {nodes
+                              .filter(
+                                (n) =>
+                                  !outputRequests.some(
+                                    (req) =>
+                                      req.elementId === n.id &&
+                                      req.requestType === requestType,
+                                  ),
+                              )
+                              .map((n) => (
+                                <SelectItem key={n.id} value={n.id}>
+                                  {String(n.data.nodeNumber)}
+                                </SelectItem>
+                              ))}
+                            <SelectItem value="__" disabled>
+                              Conduits
+                            </SelectItem>
+                            {edges
+                              .filter(
+                                (e) =>
+                                  !outputRequests.some(
+                                    (req) =>
+                                      req.elementId === e.id &&
+                                      req.requestType === requestType,
+                                  ),
+                              )
+                              .map((e) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {e.data?.label || `Edge ${e.id}`}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Request Type</Label>
+                        <Select
+                          value={requestType}
+                          onValueChange={(v: any) => setRequestType(v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="HISTORY">HISTORY</SelectItem>
+                            <SelectItem value="PLOT">PLOT</SelectItem>
+                            <SelectItem value="SPREADSHEET">
+                              SPREADSHEET
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Variables</Label>
+                        <div className="flex flex-wrap gap-4">
+                          {availableVars.map((v) => (
+                            <div key={v} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`header-var-${v}`}
+                                checked={selectedVars.includes(v)}
+                                onCheckedChange={(checked) => {
+                                  if (checked)
+                                    setSelectedVars([...selectedVars, v]);
+                                  else
+                                    setSelectedVars(
+                                      selectedVars.filter((sv) => sv !== v),
+                                    );
+                                }}
+                              />
+                              <Label htmlFor={`header-var-${v}`}>{v}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <Button onClick={handleAddRequest}>Add Request</Button>
+
+                      <Separator />
+
+                      <div className="max-h-[200px] overflow-auto">
+                        <Label className="mb-2 block">Current Requests</Label>
+                        {outputRequests.map((req) => {
+                          const el =
+                            nodes.find((n) => n.id === req.elementId) ||
+                            edges.find((e) => e.id === req.elementId);
+                          const displayLabel = String(
+                            el?.data?.nodeNumber ||
+                              el?.data?.label ||
+                              req.elementId,
+                          );
+                          return (
+                            <div
+                              key={req.id}
+                              className="flex items-center justify-between text-sm py-1 border-b"
+                            >
+                              <span>
+                                {displayLabel} ({req.requestType}): {req.variables.join(", ")}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => removeOutputRequest(req.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </DialogContent>
                                 });
                               });
                             });
