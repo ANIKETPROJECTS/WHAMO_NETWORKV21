@@ -42,9 +42,15 @@ export function DataList({ data, title }: { data: any, title: string }) {
   
   const globalUnit = useNetworkStore(state => state.globalUnit);
   const unit = data.unit || globalUnit;
-  const entries = Object.entries(data).filter(([key]) => 
-    key !== 'id' && key !== 'label' && key !== 'unit' && key !== 'type'
-  );
+  const entries = Object.entries(data).filter(([key]) => {
+    if (key === 'id' || key === 'label' || key === 'unit' || key === 'type') return false;
+    if (data.type === 'surgeTank') {
+      if (data.hasShape && key === 'diameter') return false;
+      if (!data.hasShape && key === 'shape') return false;
+      if (key === 'hasShape') return false;
+    }
+    return true;
+  });
   
   const getUnit = (key: string) => {
     const units: Record<string, { SI: string, FPS: string }> = {
