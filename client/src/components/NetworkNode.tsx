@@ -9,9 +9,12 @@ import { TooltipWrapper, DataList } from './TooltipWrapper';
 const HandleStyle = "w-2 h-2 bg-primary border border-white opacity-0 group-hover:opacity-100 transition-opacity";
 
 // Reservoir Node
-export const ReservoirNode = memo(({ data, selected }: NodeProps) => {
+export const ReservoirNode = memo(({ id, data, selected }: NodeProps) => {
+  const node = useNetworkStore(state => state.nodes.find(n => n.id === id));
+  const displayData = node ? node.data : data;
+
   return (
-    <TooltipWrapper content={<DataList data={data} title="Reservoir Properties" />}>
+    <TooltipWrapper content={<DataList data={displayData} title="Reservoir Properties" />}>
       <div className={clsx(
         "w-[50px] h-[50px] transition-all group relative flex items-center justify-center",
       )}>
@@ -42,9 +45,12 @@ export const ReservoirNode = memo(({ data, selected }: NodeProps) => {
 });
 
 // Basic Node (Simple Node)
-export const SimpleNode = memo(({ data, selected }: NodeProps) => {
+export const SimpleNode = memo(({ id, data, selected }: NodeProps) => {
+  const node = useNetworkStore(state => state.nodes.find(n => n.id === id));
+  const displayData = node ? node.data : data;
+
   return (
-    <TooltipWrapper content={<DataList data={data} title="Node Properties" />}>
+    <TooltipWrapper content={<DataList data={displayData} title="Node Properties" />}>
       <div className={clsx(
         "w-6 h-6 rounded-full border-2 shadow-sm flex items-center justify-center transition-all relative group bg-white",
         selected ? "border-blue-600 ring-2 ring-blue-600/20" : "border-blue-500"
@@ -67,9 +73,12 @@ export const SimpleNode = memo(({ data, selected }: NodeProps) => {
 });
 
 // Junction Node
-export const JunctionNode = memo(({ data, selected }: NodeProps) => {
+export const JunctionNode = memo(({ id, data, selected }: NodeProps) => {
+  const node = useNetworkStore(state => state.nodes.find(n => n.id === id));
+  const displayData = node ? node.data : data;
+
   return (
-    <TooltipWrapper content={<DataList data={data} title="Junction Properties" />}>
+    <TooltipWrapper content={<DataList data={displayData} title="Junction Properties" />}>
       <div className={clsx(
         "w-6 h-6 rounded-full border-2 shadow-sm flex items-center justify-center transition-all relative group bg-white",
         selected ? "border-red-600 ring-2 ring-red-600/20" : "border-red-500"
@@ -92,9 +101,12 @@ export const JunctionNode = memo(({ data, selected }: NodeProps) => {
 });
 
 // Surge Tank
-export const SurgeTankNode = memo(({ data, selected }: NodeProps) => {
+export const SurgeTankNode = memo(({ id, data, selected }: NodeProps) => {
+  const node = useNetworkStore(state => state.nodes.find(n => n.id === id));
+  const displayData = node ? node.data : data;
+
   return (
-    <TooltipWrapper content={<DataList data={data} title="Surge Tank Properties" />}>
+    <TooltipWrapper content={<DataList data={displayData} title="Surge Tank Properties" />}>
       <div className={clsx(
         "w-[50px] h-[50px] transition-all group relative flex items-center justify-center",
       )}>
@@ -125,9 +137,12 @@ export const SurgeTankNode = memo(({ data, selected }: NodeProps) => {
 });
 
 // Flow Boundary
-export const FlowBoundaryNode = memo(({ data, selected }: NodeProps) => {
+export const FlowBoundaryNode = memo(({ id, data, selected }: NodeProps) => {
+  const node = useNetworkStore(state => state.nodes.find(n => n.id === id));
+  const displayData = node ? node.data : data;
+
   return (
-    <TooltipWrapper content={<DataList data={data} title="Flow Boundary Properties" />}>
+    <TooltipWrapper content={<DataList data={displayData} title="Flow Boundary Properties" />}>
       <div className={clsx(
         "p-2 rounded border shadow-sm flex items-center gap-2 transition-all bg-green-50 group",
         selected ? "border-green-500 ring-1 ring-green-500/30" : "border-green-400"

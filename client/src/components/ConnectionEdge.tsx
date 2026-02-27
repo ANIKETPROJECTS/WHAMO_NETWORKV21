@@ -29,7 +29,10 @@ export const ConnectionEdge = memo(({
     targetPosition,
   });
 
-  const isDummy = type === 'dummy' || data?.type === 'dummy';
+  const edge = useNetworkStore(state => state.edges.find(e => e.id === id));
+  const displayData = edge ? edge.data : data;
+
+  const isDummy = type === 'dummy' || displayData?.type === 'dummy';
   const strokeColor = isDummy ? "#94a3b8" : "#3b82f6";
   const strokeDasharray = isDummy ? "8 8" : undefined;
 
@@ -55,10 +58,10 @@ export const ConnectionEdge = memo(({
           className="nodrag nopan"
         >
           <TooltipWrapper 
-            content={<DataList data={data} title={isDummy ? "Dummy Pipe Properties" : "Conduit Properties"} />}
+            content={<DataList data={displayData} title={isDummy ? "Dummy Pipe Properties" : "Conduit Properties"} />}
           >
             <div className="bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded border border-slate-200 shadow-sm text-[9px] font-bold cursor-help hover:bg-white transition-colors">
-              {(data?.label as ReactNode) || id}
+              {(displayData?.label as ReactNode) || id}
             </div>
           </TooltipWrapper>
         </div>

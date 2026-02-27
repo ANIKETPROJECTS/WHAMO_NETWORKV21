@@ -44,7 +44,7 @@ export function DataList({ data, title }: { data: any, title: string }) {
   const unit = data.unit || globalUnit;
   
   const entries = Object.entries(data).filter(([key]) => {
-    if (key === 'id' || key === 'label' || key === 'unit' || key === 'type' || key === 'hasAddedLoss' || key === 'hasShape') return false;
+    if (key === 'label' || key === 'unit' || key === 'type' || key === 'hasAddedLoss' || key === 'hasShape') return false;
     
     // Surge Tank specific filtering
     if (data.type === 'surgeTank' || data.type_st) {
@@ -85,12 +85,15 @@ export function DataList({ data, title }: { data: any, title: string }) {
       initialWaterLevel: { SI: 'm', FPS: 'ft' },
       d: { SI: 'm', FPS: 'in' },
       a: { SI: 'm²', FPS: 'ft²' },
+      cplus: { SI: '', FPS: '' },
+      cminus: { SI: '', FPS: '' },
     };
     return units[key]?.[unit as 'SI' | 'FPS'] || '';
   };
 
   const getLabel = (key: string) => {
     const labels: Record<string, string> = {
+      id: 'ID',
       type_st: 'Tank Type',
       initialWaterLevel: 'Initial Water Level (HTANK)',
       tankTop: 'Top Elevation',
@@ -98,8 +101,9 @@ export function DataList({ data, title }: { data: any, title: string }) {
       nodeNumber: 'Node Number',
       riserDiameter: 'Riser Diameter',
       riserTop: 'Riser Top Elevation',
-      cplus: 'CPLUS',
-      cminus: 'CMINUS',
+      cplus: 'CPLUS (Loss +)',
+      cminus: 'CMINUS (Loss -)',
+      elevation: 'Node Elevation',
     };
     return labels[key] || key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1');
   };
