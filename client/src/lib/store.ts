@@ -199,16 +199,21 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     // Convert all nodes
     const newNodes = state.nodes.map(node => {
       const dataUpdate: any = {};
+      const nodeUnit = node.data?.unit || oldUnit;
+      
       Object.entries(node.data || {}).forEach(([key, value]) => {
         if ((typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))) && fieldMapping[key]) {
-          dataUpdate[key] = convertValue(value as any, oldUnit, unit, fieldMapping[key]);
+          // Only convert if the element's current unit is different from the new global unit
+          if (nodeUnit !== unit) {
+            dataUpdate[key] = convertValue(value as any, nodeUnit, unit, fieldMapping[key]);
+          }
         }
       });
 
       if (node.data?.schedulePoints) {
         dataUpdate.schedulePoints = (node.data.schedulePoints as any[]).map(p => ({
           ...p,
-          flow: convertValue(p.flow, oldUnit, unit, 'flow')
+          flow: nodeUnit !== unit ? convertValue(p.flow, nodeUnit, unit, 'flow') : p.flow
         }));
       }
 
@@ -225,9 +230,14 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     // Convert all edges
     const newEdges = state.edges.map(edge => {
       const dataUpdate: any = {};
+      const edgeUnit = edge.data?.unit || oldUnit;
+
       Object.entries(edge.data || {}).forEach(([key, value]) => {
         if ((typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))) && fieldMapping[key]) {
-          dataUpdate[key] = convertValue(value as any, oldUnit, unit, fieldMapping[key]);
+          // Only convert if the element's current unit is different from the new global unit
+          if (edgeUnit !== unit) {
+            dataUpdate[key] = convertValue(value as any, edgeUnit, unit, fieldMapping[key]);
+          }
         }
       });
 
