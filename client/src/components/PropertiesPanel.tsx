@@ -245,16 +245,18 @@ export function PropertiesPanel() {
                   onChange={(e) => handleChange('elevation', e.target.value)} 
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="resElev">Reservoir Elevation (HW) ({currentUnit === 'SI' ? 'm' : 'ft'})</Label>
-                <Input 
-                  id="resElev" 
-                  type="number" 
-                  step="any"
-                  value={element.data?.reservoirElevation !== undefined ? parseFloat(Number(element.data.reservoirElevation).toFixed(8)) : 0} 
-                  onChange={(e) => handleChange('reservoirElevation', e.target.value)} 
-                />
-              </div>
+              {element.data?.type === 'reservoir' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="resElev">Reservoir Elevation (HW) ({currentUnit === 'SI' ? 'm' : 'ft'})</Label>
+                  <Input 
+                    id="resElev" 
+                    type="number" 
+                    step="any"
+                    value={element.data?.reservoirElevation !== undefined ? parseFloat(Number(element.data.reservoirElevation).toFixed(8)) : 0} 
+                    onChange={(e) => handleChange('reservoirElevation', e.target.value)} 
+                  />
+                </div>
+              )}
               {element.data?.type === 'flowBoundary' && (
                 <>
                   <div className="grid gap-2">
