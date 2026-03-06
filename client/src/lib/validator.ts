@@ -87,6 +87,20 @@ export function validateNetwork(nodes: WhamoNode[], edges: WhamoEdge[]): { error
       if (connections.length !== 1) {
         addError(n.id, `Reservoir ${d.label} must connect to exactly one pipe.`, d.label, n.type);
       }
+      
+      // Check if it connects to another reservoir
+      const targetNodeIds = edges
+        .filter(e => e.source === n.id || e.target === n.id)
+        .map(e => e.source === n.id ? e.target : e.source);
+      
+      targetNodeIds.forEach(targetId => {
+        const targetNode = nodes.find(node => node.id === targetId);
+        if (targetId === n.id) return; // Should already be handled by "connected to itself" check
+        if (targetNode?.type === 'reservoir') {
+          addError(n.id, `Reservoir ${d.label} cannot connect directly to another Reservoir (${targetNode.data.label}).`, d.label, n.type);
+        }
+      });
+
       if (d.reservoirElevation === undefined || d.reservoirElevation === '') {
         addError(n.id, `Reservoir ${d.label} missing elevation value.`, d.label, n.type);
       }
