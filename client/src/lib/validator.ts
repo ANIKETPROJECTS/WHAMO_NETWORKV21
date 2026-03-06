@@ -111,7 +111,7 @@ export function validateNetwork(nodes: WhamoNode[], edges: WhamoEdge[]): { error
         }
       });
 
-      if (d.reservoirElevation === undefined || d.reservoirElevation === '') {
+      if (d.reservoirElevation === undefined || d.reservoirElevation === '' || Number(d.reservoirElevation) === 0) {
         addError(n.id, `Reservoir ${d.label} missing elevation value.`, d.label, n.type);
       }
     }
