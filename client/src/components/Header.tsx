@@ -655,7 +655,7 @@ export function Header({
                               )
                               .map((n) => (
                                 <SelectItem key={n.id} value={n.id}>
-                                  {n.data.label || String(n.data.nodeNumber)}
+                                  {n.data.type === 'surgeTank' ? n.data.label : String(n.data.nodeNumber)}
                                 </SelectItem>
                               ))}
                             <SelectItem value="__" disabled>
@@ -742,10 +742,9 @@ export function Header({
                           const el =
                             nodes.find((n) => n.id === req.elementId) ||
                             edges.find((e) => e.id === req.elementId);
-                          const displayLabel = el?.data?.label || String(
-                            el?.data?.nodeNumber ||
-                              req.elementId,
-                          );
+                          const displayLabel = el?.data?.type === 'surgeTank'
+                            ? el?.data?.label
+                            : (String(el?.data?.nodeNumber) || el?.data?.label || req.elementId);
                           return (
                             <div
                               key={`${req.id}-${req.requestType}`}
