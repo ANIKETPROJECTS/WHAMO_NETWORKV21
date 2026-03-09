@@ -655,7 +655,7 @@ export function Header({
                               )
                               .map((n) => (
                                 <SelectItem key={n.id} value={n.id}>
-                                  {String(n.data.nodeNumber)}
+                                  {n.data.label || String(n.data.nodeNumber)}
                                 </SelectItem>
                               ))}
                             <SelectItem value="__" disabled>

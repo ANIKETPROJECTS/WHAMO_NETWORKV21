@@ -219,7 +219,7 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
                         .filter(n => !outputRequests.some(req => req.elementId === n.id && req.requestType === requestType))
                         .map(n => (
                           <SelectItem key={n.id} value={n.id}>
-                            {String(n.data.nodeNumber)}
+                            {n.data.label || String(n.data.nodeNumber)}
                           </SelectItem>
                         ))}
                       <SelectItem value="__" disabled>Conduits</SelectItem>
