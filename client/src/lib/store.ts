@@ -18,6 +18,11 @@ import { NodeType, LinkType } from '@shared/schema';
 export type UnitSystem = 'SI' | 'FPS';
 
 // Define base data structures for our specific engineering domain
+interface UnitCache {
+  FPS?: Record<string, any>;
+  SI?: Record<string, any>;
+}
+
 interface NodeData extends Record<string, unknown> {
   label: string;
   type: NodeType;
@@ -39,6 +44,7 @@ interface NodeData extends Record<string, unknown> {
   shape?: { e: number | string; a: number | string }[];
   mode?: 'fixed' | 'schedule';
   hScheduleNumber?: number;
+  _unitCache?: UnitCache;
 }
 
 interface EdgeData extends Record<string, unknown> {
@@ -59,6 +65,7 @@ interface EdgeData extends Record<string, unknown> {
   area?: number | string;
   d?: number | string;
   a?: number | string;
+  _unitCache?: UnitCache;
 }
 
 export type WhamoNode = Node<NodeData>;
@@ -184,8 +191,6 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       if (isNaN(numValue)) return value;
       if (from === to) return numValue;
       const factor = SI_TO_FPS[type] || 1;
-      
-      // Calculate with 8 decimals for internal precision
       const result = to === 'FPS' ? numValue * factor : numValue / factor;
       return parseFloat(result.toFixed(8));
     };
@@ -207,59 +212,105 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       riserTop: 'elevation'
     };
 
+    const cacheableFields = Object.keys(fieldMapping);
+
     // Convert all nodes
     const newNodes = state.nodes.map(node => {
       const dataUpdate: any = {};
       const nodeUnit = node.data?.unit || oldUnit;
-      
-      Object.entries(node.data || {}).forEach(([key, value]) => {
-        if ((typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))) && fieldMapping[key]) {
-          // Only convert if the element's current unit is different from the new global unit
-          if (nodeUnit !== unit) {
-            dataUpdate[key] = convertValue(value as any, nodeUnit, unit, fieldMapping[key]);
-          }
+      if (nodeUnit === unit) {
+        if (node.data?.unit) dataUpdate.unit = undefined;
+        return Object.keys(dataUpdate).length > 0
+          ? { ...node, data: { ...node.data, ...dataUpdate } }
+          : node;
+      }
+
+      // Save current values into cache for oldUnit
+      const existingCache: UnitCache = (node.data?._unitCache as UnitCache) || {};
+      const savedForOldUnit: Record<string, any> = {};
+      cacheableFields.forEach(key => {
+        const val = (node.data as any)?.[key];
+        if (val !== undefined && val !== null && val !== '') {
+          savedForOldUnit[key] = val;
         }
       });
-
       if (node.data?.schedulePoints) {
-        dataUpdate.schedulePoints = (node.data.schedulePoints as any[]).map(p => ({
-          ...p,
-          flow: nodeUnit !== unit ? convertValue(p.flow, nodeUnit, unit, 'flow') : p.flow
-        }));
+        savedForOldUnit.schedulePoints = JSON.parse(JSON.stringify(node.data.schedulePoints));
+      }
+      const newCache: UnitCache = {
+        ...existingCache,
+        [nodeUnit]: { ...(existingCache[nodeUnit] || {}), ...savedForOldUnit },
+      };
+
+      // Check if we have cached values for the target unit
+      const cachedTarget = newCache[unit];
+      if (cachedTarget && Object.values(cachedTarget).some(v => v !== undefined)) {
+        Object.entries(cachedTarget).forEach(([key, val]) => {
+          if (val !== undefined) dataUpdate[key] = val;
+        });
+      } else {
+        // No cache — convert mathematically
+        Object.entries(node.data || {}).forEach(([key, value]) => {
+          if ((typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))) && fieldMapping[key]) {
+            dataUpdate[key] = convertValue(value as any, nodeUnit, unit, fieldMapping[key]);
+          }
+        });
+        if (node.data?.schedulePoints) {
+          dataUpdate.schedulePoints = (node.data.schedulePoints as any[]).map(p => ({
+            ...p,
+            flow: convertValue(p.flow, nodeUnit, unit, 'flow')
+          }));
+        }
       }
 
-      // Clear local unit override so it follows global setting
-      if (node.data?.unit) {
-        dataUpdate.unit = undefined;
-      }
+      if (node.data?.unit) dataUpdate.unit = undefined;
+      dataUpdate._unitCache = newCache;
 
-      return Object.keys(dataUpdate).length > 0 
-        ? { ...node, data: { ...node.data, ...dataUpdate } } 
-        : node;
+      return { ...node, data: { ...node.data, ...dataUpdate } };
     });
 
     // Convert all edges
     const newEdges = state.edges.map(edge => {
       const dataUpdate: any = {};
       const edgeUnit = edge.data?.unit || oldUnit;
-
-      Object.entries(edge.data || {}).forEach(([key, value]) => {
-        if ((typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))) && fieldMapping[key]) {
-          // Only convert if the element's current unit is different from the new global unit
-          if (edgeUnit !== unit) {
-            dataUpdate[key] = convertValue(value as any, edgeUnit, unit, fieldMapping[key]);
-          }
-        }
-      });
-
-      // Clear local unit override so it follows global setting
-      if (edge.data?.unit) {
-        dataUpdate.unit = undefined;
+      if (edgeUnit === unit) {
+        if (edge.data?.unit) dataUpdate.unit = undefined;
+        return Object.keys(dataUpdate).length > 0
+          ? { ...edge, data: { ...edge.data, ...dataUpdate } }
+          : edge;
       }
 
-      return Object.keys(dataUpdate).length > 0 
-        ? { ...edge, data: { ...edge.data, ...dataUpdate } } 
-        : edge;
+      // Save current values into cache for oldUnit
+      const existingCache: UnitCache = (edge.data?._unitCache as UnitCache) || {};
+      const savedForOldUnit: Record<string, any> = {};
+      cacheableFields.forEach(key => {
+        const val = (edge.data as any)?.[key];
+        if (val !== undefined && val !== null && val !== '') {
+          savedForOldUnit[key] = val;
+        }
+      });
+      const newCache: UnitCache = {
+        ...existingCache,
+        [edgeUnit]: { ...(existingCache[edgeUnit] || {}), ...savedForOldUnit },
+      };
+
+      const cachedTarget = newCache[unit];
+      if (cachedTarget && Object.values(cachedTarget).some(v => v !== undefined)) {
+        Object.entries(cachedTarget).forEach(([key, val]) => {
+          if (val !== undefined) dataUpdate[key] = val;
+        });
+      } else {
+        Object.entries(edge.data || {}).forEach(([key, value]) => {
+          if ((typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value)))) && fieldMapping[key]) {
+            dataUpdate[key] = convertValue(value as any, edgeUnit, unit, fieldMapping[key]);
+          }
+        });
+      }
+
+      if (edge.data?.unit) dataUpdate.unit = undefined;
+      dataUpdate._unitCache = newCache;
+
+      return { ...edge, data: { ...edge.data, ...dataUpdate } };
     });
 
     set({ 

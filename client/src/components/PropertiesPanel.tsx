@@ -51,46 +51,67 @@ export function PropertiesPanel() {
     return parseFloat(result.toFixed(8));
   };
 
-  const getPrecision = (value: number | string): number => {
-    const s = value.toString();
-    const dotIndex = s.indexOf('.');
-    return dotIndex === -1 ? 0 : s.length - dotIndex - 1;
+  const fieldMapping: Record<string, keyof typeof SI_TO_FPS> = {
+    length: 'length',
+    diameter: 'diameter',
+    elevation: 'elevation',
+    reservoirElevation: 'elevation',
+    tankTop: 'elevation',
+    tankBottom: 'elevation',
+    initialWaterLevel: 'elevation',
+    riserDiameter: 'diameter',
+    riserTop: 'elevation',
+    distance: 'length',
+    celerity: 'celerity',
+    area: 'area'
   };
+
+  const cacheableFields = Object.keys(fieldMapping);
 
   const handleUnitToggle = (newUnit: UnitSystem) => {
     if (newUnit === currentUnit) return;
 
-    const dataUpdate: any = { unit: newUnit };
-    
-    // We map specialized fields to their conversion types
-    const fieldMapping: Record<string, keyof typeof SI_TO_FPS> = {
-      length: 'length',
-      diameter: 'diameter',
-      elevation: 'elevation',
-      reservoirElevation: 'elevation',
-      tankTop: 'elevation',
-      tankBottom: 'elevation',
-      initialWaterLevel: 'elevation',
-      riserDiameter: 'diameter',
-      riserTop: 'elevation',
-      distance: 'length',
-      celerity: 'celerity',
-      area: 'area'
-    };
+    const existingCache: Record<string, any> = (element.data?._unitCache as any) || {};
 
-    Object.entries(element.data || {}).forEach(([key, value]) => {
-      const numValue = typeof value === 'string' ? parseFloat(value) : (typeof value === 'number' ? value : NaN);
-      if (!isNaN(numValue) && fieldMapping[key]) {
-        dataUpdate[key] = convertValue(numValue, currentUnit, newUnit, fieldMapping[key]);
+    // Save current values into cache for the current unit
+    const savedForCurrentUnit: Record<string, any> = {};
+    cacheableFields.forEach(key => {
+      const val = (element.data as any)?.[key];
+      if (val !== undefined && val !== null && val !== '') {
+        savedForCurrentUnit[key] = val;
       }
     });
-
-    // Handle schedule points for Flow Boundary
     if (element.data?.schedulePoints) {
-      dataUpdate.schedulePoints = (element.data.schedulePoints as any[]).map(p => ({
-        ...p,
-        flow: convertValue(p.flow, currentUnit, newUnit, 'flow')
-      }));
+      savedForCurrentUnit.schedulePoints = JSON.parse(JSON.stringify(element.data.schedulePoints));
+    }
+
+    const newCache = {
+      ...existingCache,
+      [currentUnit]: { ...(existingCache[currentUnit] || {}), ...savedForCurrentUnit },
+    };
+
+    const dataUpdate: any = { unit: newUnit, _unitCache: newCache };
+
+    // Check if we have cached values for the target unit
+    const cachedTarget = newCache[newUnit];
+    if (cachedTarget && Object.values(cachedTarget).some(v => v !== undefined)) {
+      Object.entries(cachedTarget).forEach(([key, val]) => {
+        if (val !== undefined) dataUpdate[key] = val;
+      });
+    } else {
+      // No cache — convert mathematically
+      Object.entries(element.data || {}).forEach(([key, value]) => {
+        const numValue = typeof value === 'string' ? parseFloat(value) : (typeof value === 'number' ? value : NaN);
+        if (!isNaN(numValue) && fieldMapping[key]) {
+          dataUpdate[key] = convertValue(numValue, currentUnit, newUnit, fieldMapping[key]);
+        }
+      });
+      if (element.data?.schedulePoints) {
+        dataUpdate.schedulePoints = (element.data.schedulePoints as any[]).map(p => ({
+          ...p,
+          flow: convertValue(p.flow, currentUnit, newUnit, 'flow')
+        }));
+      }
     }
 
     if (isNode) {
@@ -100,29 +121,30 @@ export function PropertiesPanel() {
     }
   };
 
-  const formatDisplayValue = (value: any, key: string) => {
-    if (typeof value !== 'number') return value;
-    
-    // If we're looking at a field that was converted, we might want to round it for display
-    // but the user asked to show it in the original decimal amount it had.
-    // Since we don't store the original precision per-field, we'll use a heuristic 
-    // or just let the Input component handle it (which usually doesn't round unless specified).
-    // However, to satisfy "show it in the original decimal amount it had", 
-    // we can try to round to a reasonable precision if it looks like a repeating decimal from conversion.
-    
-    // For now, we'll just return the number and let the user edit it.
-    return value;
-  };
-
   const handleChange = (key: string, value: any) => {
     const numericValue = (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value))) 
       ? Number(value) 
       : value;
-      
+
+    // When the user edits a cacheable field, update the cache for the current unit
+    // and clear the cached value for the other unit so it gets re-derived next switch
+    const update: any = { [key]: numericValue };
+    if (cacheableFields.includes(key)) {
+      const existingCache: Record<string, any> = (element.data?._unitCache as any) || {};
+      const otherUnit: UnitSystem = currentUnit === 'FPS' ? 'SI' : 'FPS';
+      update._unitCache = {
+        ...existingCache,
+        [currentUnit]: { ...(existingCache[currentUnit] || {}), [key]: numericValue },
+        [otherUnit]: existingCache[otherUnit]
+          ? { ...existingCache[otherUnit], [key]: undefined }
+          : existingCache[otherUnit],
+      };
+    }
+
     if (isNode) {
-      updateNodeData(selectedElementId, { [key]: numericValue });
+      updateNodeData(selectedElementId, update);
     } else {
-      updateEdgeData(selectedElementId, { [key]: numericValue });
+      updateEdgeData(selectedElementId, update);
     }
   };
 
