@@ -852,11 +852,10 @@ export function PropertiesPanel() {
                     onChange={(e) => {
                       handleChange('friction', e.target.value);
                       const f = parseFloat(e.target.value);
-                      const diamFt = currentUnit === 'SI'
-                        ? (parseFloat(element.data?.diameter) || 0) * 3.28084
-                        : (parseFloat(element.data?.diameter) || 0);
-                      if (!isNaN(f) && f > 0 && diamFt > 0) {
-                        const n = Math.sqrt((f * Math.pow(diamFt, 1 / 3)) / 185);
+                      const diam = parseFloat(element.data?.diameter) || 0;
+                      const K = currentUnit === 'SI' ? 124.58 : 185;
+                      if (!isNaN(f) && f > 0 && diam > 0) {
+                        const n = Math.sqrt((f * Math.pow(diam, 1 / 3)) / K);
                         handleChange('manningsN', parseFloat(n.toFixed(6)).toString());
                       }
                     }}
@@ -982,11 +981,10 @@ export function PropertiesPanel() {
                         return element.data.manningsN;
                       }
                       const f = parseFloat(element.data?.friction) || 0;
-                      const diamFt = currentUnit === 'SI'
-                        ? (parseFloat(element.data?.diameter) || 0) * 3.28084
-                        : (parseFloat(element.data?.diameter) || 0);
-                      if (f > 0 && diamFt > 0) {
-                        return parseFloat(Math.sqrt((f * Math.pow(diamFt, 1 / 3)) / 185).toFixed(6));
+                      const diam = parseFloat(element.data?.diameter) || 0;
+                      const K = currentUnit === 'SI' ? 124.58 : 185;
+                      if (f > 0 && diam > 0) {
+                        return parseFloat(Math.sqrt((f * Math.pow(diam, 1 / 3)) / K).toFixed(6));
                       }
                       return '';
                     })()}
@@ -994,11 +992,10 @@ export function PropertiesPanel() {
                       const n = parseFloat(e.target.value);
                       handleChange('manningsN', e.target.value);
                       if (!isNaN(n) && n > 0) {
-                        const diamFt = currentUnit === 'SI'
-                          ? (parseFloat(element.data?.diameter) || 0) * 3.28084
-                          : (parseFloat(element.data?.diameter) || 0);
-                        if (diamFt > 0) {
-                          const f = (185 * n * n) / Math.pow(diamFt, 1 / 3);
+                        const diam = parseFloat(element.data?.diameter) || 0;
+                        const K = currentUnit === 'SI' ? 124.58 : 185;
+                        if (diam > 0) {
+                          const f = (K * n * n) / Math.pow(diam, 1 / 3);
                           handleChange('friction', parseFloat(f.toFixed(6)).toString());
                         }
                       }
@@ -1006,7 +1003,7 @@ export function PropertiesPanel() {
                   />
                 </div>
                 <div className="rounded bg-muted px-3 py-2 text-sm text-muted-foreground">
-                  <span>f = 185 · n² / D<sup>1/3</sup></span>
+                  <span>f = {currentUnit === 'SI' ? '124.58' : '185'} · n² / D<sup>1/3</sup></span>
                   {element.data?.friction ? (
                     <span className="ml-2 font-semibold text-foreground">
                       = {parseFloat(Number(element.data.friction).toFixed(6))}
