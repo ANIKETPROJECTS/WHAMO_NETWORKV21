@@ -337,29 +337,6 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
     addL(`FLOWBC ID ${d.label} QSCHEDULE ${d.scheduleNumber} FINISH`);
   });
 
-  const exportedPumpLabels = new Set<string>();
-  nodes.filter(n => n.type === 'pump').forEach(n => {
-    const d = n.data;
-    if (!d) return;
-    const label = d.label;
-    if (exportedPumpLabels.has(label)) return;
-    exportedPumpLabels.add(label);
-    const unit = d.unit || globalUnit;
-    addComment(d.comment);
-    addL('PUMP');
-    addL(` ID ${label}`);
-    addL(` HPUMP ${toFPS(Number(d.pumpHead ?? 50), unit, 'elevation')}`);
-    addL(` QPUMP ${toFPS(Number(d.pumpFlow ?? 10), unit, 'flow')}`);
-    if (d.speedFactor !== undefined && Number(d.speedFactor) !== 1.0) {
-      addL(` SPEED ${d.speedFactor}`);
-    }
-    if (d.pumpStatus && d.pumpStatus !== 'ACTIVE') {
-      addL(` STATUS ${d.pumpStatus}`);
-    }
-    addL('FINISH');
-    addL('');
-  });
-
   const exportedValveLabels = new Set<string>();
   nodes.filter(n => n.type === 'checkValve').forEach(n => {
     const d = n.data;
@@ -367,17 +344,64 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
     const label = d.label;
     if (exportedValveLabels.has(label)) return;
     exportedValveLabels.add(label);
+    const unit = d.unit || globalUnit;
     addComment(d.comment);
-    addL('VALVE');
-    addL(` ID ${label}`);
-    addL(' TYPE CHECK');
-    if (d.closureLoss !== undefined) {
-      addL(` CLOS ${d.closureLoss}`);
-    }
-    if (d.valveStatus && d.valveStatus === 'CLOSED') {
-      addL(' STATUS CLOSED');
+    const diam = d.valveDiam !== undefined && Number(d.valveDiam) !== 0
+      ? toFPS(Number(d.valveDiam), unit, 'diameter')
+      : '0';
+    addL(`ONEWAY ID ${label} DIAM ${diam} FINISH`);
+    addL('');
+  });
+
+  const exportedPumpLabels = new Set<string>();
+  nodes.filter(n => n.type === 'pump').forEach(n => {
+    const d = n.data;
+    if (!d) return;
+    const label = d.label;
+    if (exportedPumpLabels.has(label)) return;
+    exportedPumpLabels.add(label);
+    addComment(d.comment);
+    const pType = d.pumpType ?? 1;
+    const rq = Number(d.rq ?? 0);
+    const rhead = Number(d.rhead ?? 0);
+    const rspeed = Number(d.rspeed ?? 0);
+    const rtorque = Number(d.rtorque ?? 0);
+    const wr2 = Number(d.wr2 ?? 0);
+    addL(`PUMP ID ${label} TYPE ${pType} RQ ${rq} RHEAD ${rhead} RSPEED ${rspeed} RTOROUE ${rtorque}`);
+    addL(` WR2 ${wr2} FINISH`);
+    addL('');
+  });
+
+  // PCHAR sections (global, per pump type)
+  const pcharData = state.pcharData || {};
+  const pcharTypes = Object.keys(pcharData).map(Number).sort();
+  pcharTypes.forEach(pType => {
+    const pc = pcharData[pType];
+    if (!pc) return;
+    addL(`PCHAR TYPE ${pType}`);
+    addL('SRATIO');
+    addL(pc.sratio.join(' '));
+    addL('QRATIO');
+    addL(pc.qratio.join(' '));
+    addL('HRATIO');
+    pc.hratio.forEach(row => addL(row.join(' ')));
+    addL('TRATIO');
+    const flat = pc.tratio;
+    for (let i = 0; i < flat.length; i += 8) {
+      addL(flat.slice(i, i + 8).join(' '));
     }
     addL('FINISH');
+    addL('');
+  });
+
+  // OPPUMP for active pumps
+  const activePumps = nodes.filter(n => n.type === 'pump' && n.data?.pumpStatus !== 'INACTIVE');
+  const seenOppump = new Set<string>();
+  activePumps.forEach(n => {
+    const label = n.data?.label;
+    if (!label || seenOppump.has(label)) return;
+    seenOppump.add(label);
+    addL(`OPPUMP ID ${label} PUMP FINISH`);
     addL('');
   });
 

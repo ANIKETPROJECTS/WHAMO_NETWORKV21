@@ -17,6 +17,13 @@ import { NodeType, LinkType } from '@shared/schema';
 
 export type UnitSystem = 'SI' | 'FPS';
 
+export interface PcharType {
+  sratio: number[];   // 11 values
+  qratio: number[];   // 12 values
+  hratio: number[][];  // [12 rows][11 cols]
+  tratio: number[];    // flat 132 values (12×11)
+}
+
 // Define base data structures for our specific engineering domain
 interface UnitCache {
   FPS?: Record<string, any>;
@@ -106,6 +113,7 @@ interface NetworkState {
   loadedFileHandle: FileSystemFileHandle | null;
   globalUnit: UnitSystem;
   nodeSelectionSet: Set<string>;
+  pcharData: Record<number, PcharType>;
   history: {
     past: Partial<NetworkState>[];
     future: Partial<NetworkState>[];
@@ -120,8 +128,9 @@ interface NetworkState {
   updateEdgeData: (id: string, data: Partial<EdgeData>) => void;
   deleteElement: (id: string, type: 'node' | 'edge') => void;
   selectElement: (id: string | null, type: 'node' | 'edge' | null) => void;
-  loadNetwork: (nodes: WhamoNode[], edges: WhamoEdge[], params?: ComputationalParameters, requests?: OutputRequest[], projectName?: string, fileHandle?: FileSystemFileHandle) => void;
+  loadNetwork: (nodes: WhamoNode[], edges: WhamoEdge[], params?: ComputationalParameters, requests?: OutputRequest[], projectName?: string, fileHandle?: FileSystemFileHandle, pcharData?: Record<number, PcharType>) => void;
   clearNetwork: () => void;
+  updatePcharData: (pumpType: number, data: PcharType) => void;
   autoSelectOutputRequests: () => void;
   updateComputationalParams: (params: Partial<ComputationalParameters>) => void;
   addOutputRequest: (request: Omit<OutputRequest, 'id'>) => void;
@@ -166,6 +175,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   loadedFileHandle: null,
   globalUnit: 'FPS',
   nodeSelectionSet: new Set(),
+  pcharData: {},
   history: {
     past: [],
     future: [],
@@ -618,12 +628,12 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         break;
       case 'pump': {
         const pumpCount = get().nodes.filter(n => n.type === 'pump').length + 1;
-        initialData = { ...initialData, label: `P${pumpCount}`, nodeNumber, elevation: 0, pumpHead: 50, pumpFlow: 10, speedFactor: 1.0, pumpStatus: 'ACTIVE' };
+        initialData = { ...initialData, label: `P${pumpCount}`, nodeNumber, elevation: 0, pumpStatus: 'ACTIVE', pumpType: 1, rq: 0, rhead: 0, rspeed: 0, rtorque: 0, wr2: 0 };
         break;
       }
       case 'checkValve': {
         const cvCount = get().nodes.filter(n => n.type === 'checkValve').length + 1;
-        initialData = { ...initialData, label: `VC${cvCount}`, nodeNumber, elevation: 0, valveStatus: 'OPEN', closureLoss: 1e10 };
+        initialData = { ...initialData, label: `VC${cvCount}`, nodeNumber, elevation: 0, valveStatus: 'OPEN', valveDiam: 0 };
         break;
       }
     }
@@ -778,7 +788,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     set({ selectedElementId: id, selectedElementType: type });
   },
 
-  loadNetwork: (nodes, edges, params, requests, projectName, fileHandle) => {
+  loadNetwork: (nodes, edges, params, requests, projectName, fileHandle, pcharData) => {
     const maxId = Math.max(
       ...nodes.map(n => parseInt(n.id) || 0),
       ...edges.map(e => parseInt(e.id) || 0),
@@ -839,6 +849,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       outputRequests: requests || [],
       projectName: projectName || get().projectName,
       loadedFileHandle: fileHandle || null,
+      pcharData: pcharData || {},
       selectedElementId: null, 
       selectedElementType: null 
     });
@@ -851,6 +862,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       nodes: [], 
       edges: [], 
       hSchedules: [],
+      pcharData: {},
       selectedElementId: null, 
       selectedElementType: null, 
       outputRequests: [],
@@ -858,6 +870,11 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       loadedFileHandle: null
     });
     idCounter = 1;
+  },
+
+  updatePcharData: (pumpType, data) => {
+    const existing = get().pcharData;
+    set({ pcharData: { ...existing, [pumpType]: data } });
   },
 
   autoSelectOutputRequests: () => {

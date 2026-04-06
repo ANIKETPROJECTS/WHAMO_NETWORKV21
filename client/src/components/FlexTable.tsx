@@ -98,8 +98,8 @@ const COLS: Record<FilterKey, ColKey[]> = {
                  'initWaterLevel','riserDiam','riserTop','hasShape','diameter',
                  'celerity','friction','hasAddedLoss','cplus','cminus','shapePairs','comment'],
   flowBoundary:['rowNum','unitToggle','label','nodeNum','schedNum','qSchedPairs','comment'],
-  pump:        ['rowNum','unitToggle','label','nodeNum','elevation','pumpStatus','pumpHead','pumpFlow','speedFactor','comment'],
-  checkValve:  ['rowNum','unitToggle','label','nodeNum','elevation','valveStatus','closureLoss','comment'],
+  pump:        ['rowNum','unitToggle','label','nodeNum','elevation','pumpStatus','pumpType','rq','rhead','rspeed','rtorque','wr2','comment'],
+  checkValve:  ['rowNum','unitToggle','label','nodeNum','elevation','valveStatus','valveDiam','comment'],
 };
 
 // ─── Pairs editor state ───────────────────────────────────────────────────────
@@ -475,8 +475,9 @@ function ColHeader({ col, unit }: { col: ColKey; unit: UnitSystem }) {
     initWaterLevel: `HTANK (${L})`, riserDiam: `Riser Diam (${L})`,
     riserTop: `Riser Top (${L})`, hasShape: 'Use SHAPE', shapePairs: 'Shape Pairs',
     schedNum: 'Q Sched #', qSchedPairs: 'Q Schedule',
-    pumpStatus: 'Status', pumpHead: `Design Head (${L})`, pumpFlow: `Design Flow`, speedFactor: 'Speed Factor',
-    valveStatus: 'Status', closureLoss: 'Closure Loss (CLOS)',
+    pumpStatus: 'Status', pumpType: 'PCHAR Type',
+    rq: `RQ (${V})`, rhead: `RHEAD (${L})`, rspeed: 'RSPEED (RPM)', rtorque: 'RTOROUE', wr2: 'WR²',
+    valveStatus: 'Status', valveDiam: `Diam (${L})`,
     comment: 'Comment',
   };
   return (
@@ -747,30 +748,45 @@ function RowCells({
         options={[{label:'ACTIVE',value:'ACTIVE'},{label:'INACTIVE',value:'INACTIVE'}]}
         dimmed={!isPump} onChange={isPump ? v => changeNode('pumpStatus', v) : undefined} testId={`cell-pumpstatus-${row.id}`} />
     );
-    case 'pumpHead': return (
-      <EditableCell key={col} value={isPump ? fmt(d.pumpHead ?? 50) : ''} type="number"
-        readOnly={!isPump} dimmed={!isPump}
-        onChange={v => changeNode('pumpHead', v)} testId={`cell-pumphead-${row.id}`} />
+    case 'pumpType': return (
+      <SelectCell key={col} value={String(d.pumpType ?? 1)}
+        options={[{label:'TYPE 1',value:'1'},{label:'TYPE 2',value:'2'}]}
+        dimmed={!isPump} onChange={isPump ? v => changeNode('pumpType', v) : undefined} testId={`cell-pumptype-${row.id}`} />
     );
-    case 'pumpFlow': return (
-      <EditableCell key={col} value={isPump ? fmt(d.pumpFlow ?? 10) : ''} type="number"
+    case 'rq': return (
+      <EditableCell key={col} value={isPump ? fmt(d.rq ?? 0) : ''} type="number"
         readOnly={!isPump} dimmed={!isPump}
-        onChange={v => changeNode('pumpFlow', v)} testId={`cell-pumpflow-${row.id}`} />
+        onChange={v => changeNode('rq', v)} testId={`cell-rq-${row.id}`} />
     );
-    case 'speedFactor': return (
-      <EditableCell key={col} value={isPump ? fmt(d.speedFactor ?? 1) : ''} type="number"
+    case 'rhead': return (
+      <EditableCell key={col} value={isPump ? fmt(d.rhead ?? 0) : ''} type="number"
         readOnly={!isPump} dimmed={!isPump}
-        onChange={v => changeNode('speedFactor', v)} testId={`cell-speedfactor-${row.id}`} />
+        onChange={v => changeNode('rhead', v)} testId={`cell-rhead-${row.id}`} />
+    );
+    case 'rspeed': return (
+      <EditableCell key={col} value={isPump ? fmt(d.rspeed ?? 0) : ''} type="number"
+        readOnly={!isPump} dimmed={!isPump}
+        onChange={v => changeNode('rspeed', v)} testId={`cell-rspeed-${row.id}`} />
+    );
+    case 'rtorque': return (
+      <EditableCell key={col} value={isPump ? fmt(d.rtorque ?? 0) : ''} type="number"
+        readOnly={!isPump} dimmed={!isPump}
+        onChange={v => changeNode('rtorque', v)} testId={`cell-rtorque-${row.id}`} />
+    );
+    case 'wr2': return (
+      <EditableCell key={col} value={isPump ? fmt(d.wr2 ?? 0) : ''} type="number"
+        readOnly={!isPump} dimmed={!isPump}
+        onChange={v => changeNode('wr2', v)} testId={`cell-wr2-${row.id}`} />
     );
     case 'valveStatus': return (
       <SelectCell key={col} value={d.valveStatus || 'OPEN'}
         options={[{label:'OPEN',value:'OPEN'},{label:'CLOSED',value:'CLOSED'}]}
         dimmed={!isCheckValve} onChange={isCheckValve ? v => changeNode('valveStatus', v) : undefined} testId={`cell-valvestatus-${row.id}`} />
     );
-    case 'closureLoss': return (
-      <EditableCell key={col} value={isCheckValve ? fmt(d.closureLoss) : ''} type="number"
+    case 'valveDiam': return (
+      <EditableCell key={col} value={isCheckValve ? fmt(d.valveDiam ?? 0) : ''} type="number"
         readOnly={!isCheckValve} dimmed={!isCheckValve}
-        onChange={v => changeNode('closureLoss', v)} testId={`cell-closureloss-${row.id}`} />
+        onChange={v => changeNode('valveDiam', v)} testId={`cell-valvediam-${row.id}`} />
     );
     case 'comment': return (
       <EditableCell key={col} value={d.comment ?? ''} onChange={v => change('comment', v)}

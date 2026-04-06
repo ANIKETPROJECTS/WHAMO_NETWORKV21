@@ -1,101 +1,696 @@
-import { WhamoNode, WhamoEdge } from './store';
+import { WhamoNode, WhamoEdge, PcharType } from './store';
 
-export function parseInpFile(content: string): { nodes: WhamoNode[], edges: WhamoEdge[] } {
-  const nodes: WhamoNode[] = [];
-  const edges: WhamoEdge[] = [];
-  const lines = content.split('\n');
-  
-  const nodeElevations: Record<string, number> = {};
-  
-  // First pass: find node elevations
-  lines.forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('NODE')) {
-      const parts = trimmed.split(/\s+/);
-      // NODE 1 ELEV 4022.31
-      if (parts.length >= 4 && parts[2] === 'ELEV') {
-        nodeElevations[parts[1]] = parseFloat(parts[3]);
-      }
+interface ParsedTopology {
+  elemLinks: Map<string, { from: string; to: string; type: 'link' }>;
+  elemAt: Map<string, string>;
+  junctions: Set<string>;
+  nodeElevations: Map<string, number>;
+}
+
+interface ParsedElements {
+  reservoirs: Map<string, { elevation: number; mode: string; hScheduleNumber?: number }>;
+  conduits: Map<string, {
+    length: number; diameter: number; celerity: number; friction: number;
+    numseg?: number; hasAddedLoss?: boolean; cplus?: number; cminus?: number;
+    variable?: boolean; distance?: number; area?: number; d?: number; a?: number;
+  }>;
+  pumps: Map<string, { pumpType: number; rq: number; rhead: number; rspeed: number; rtorque: number; wr2: number }>;
+  oneway: Map<string, { diam: number }>;
+  oppumps: Set<string>;
+  pchar: Map<number, PcharType>;
+}
+
+function joinContinuationLines(lines: string[]): string[] {
+  const joined: string[] = [];
+  let buf = '';
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith('C ') || trimmed.startsWith('c ') || trimmed === 'C' || trimmed === 'c') {
+      if (buf) { joined.push(buf); buf = ''; }
+      continue;
     }
-  });
+    if (buf) {
+      buf += ' ' + trimmed;
+    } else {
+      buf = trimmed;
+    }
+    if (/\bFINISH\b/i.test(trimmed)) {
+      joined.push(buf);
+      buf = '';
+    }
+  }
+  if (buf) joined.push(buf);
+  return joined;
+}
 
-  let currentSection = '';
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith('c') || line.startsWith('C')) continue;
+function parseSystemSection(lines: string[]): ParsedTopology {
+  const elemLinks = new Map<string, { from: string; to: string; type: 'link' }>();
+  const elemAt = new Map<string, string>();
+  const junctions = new Set<string>();
+  const nodeElevations = new Map<string, number>();
 
-    if (line.startsWith('RESERVOIR')) {
-      const idLine = lines[++i]?.trim() || '';
-      const elevLine = lines[++i]?.trim() || '';
-      const id = idLine.replace('ID ', '').trim();
-      const elev = parseFloat(elevLine.replace('ELEV ', '').trim());
-      
-      // Find node number from ELEM section (simplified for now)
-      // In a real parser we'd track the full topology
-      nodes.push({
-        id: id,
-        type: 'reservoir',
-        position: { x: 50, y: 100 + nodes.length * 100 },
-        data: {
-          label: id,
-          type: 'reservoir',
-          elevation: elev,
-          nodeNumber: parseInt(id) || nodes.length + 1
-        }
-      });
+  for (const line of lines) {
+    const upper = line.trim().toUpperCase();
+    if (!upper) continue;
+
+    const elemLinkMatch = line.match(/^ELEM\s+(\S+)\s+LINK\s+(\S+)\s+(\S+)/i);
+    if (elemLinkMatch) {
+      const [, id, from, to] = elemLinkMatch;
+      if (!elemLinks.has(id)) {
+        elemLinks.set(id, { from, to, type: 'link' });
+      }
       continue;
     }
 
-    if (line.startsWith('CONDUIT ID')) {
-      const parts = line.split(/\s+/);
-      const id = parts[2];
-      const isDummy = lines[i+1]?.trim() === 'DUMMY';
-      
-      if (isDummy) {
-        i += 1; // skip DUMMY
-        const diamLine = lines[++i]?.trim() || '';
-        const diameter = parseFloat(diamLine.replace('DIAMETER ', '').trim());
-        
-        edges.push({
-          id: `edge-${id}`,
-          source: '', // Need topology mapping
-          target: '',
+    const elemAtMatch = line.match(/^ELEM\s+(\S+)\s+AT\s+(\S+)/i);
+    if (elemAtMatch) {
+      const [, id, nodeId] = elemAtMatch;
+      elemAt.set(id, nodeId);
+      continue;
+    }
+
+    const junctionMatch = line.match(/^JUNCTION\s+AT\s+(\S+)/i);
+    if (junctionMatch) {
+      junctions.add(junctionMatch[1]);
+      continue;
+    }
+
+    const nodeMatch = line.match(/^NODE\s+(\S+)\s+ELEV\s+([\-\d.]+)/i);
+    if (nodeMatch) {
+      nodeElevations.set(nodeMatch[1], parseFloat(nodeMatch[2]));
+      continue;
+    }
+  }
+
+  return { elemLinks, elemAt, junctions, nodeElevations };
+}
+
+function parseFloat2(s: string | undefined): number {
+  if (!s) return 0;
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function parseElementProperties(lines: string[]): ParsedElements {
+  const reservoirs = new Map<string, { elevation: number; mode: string; hScheduleNumber?: number }>();
+  const conduits = new Map<string, any>();
+  const pumps = new Map<string, any>();
+  const oneway = new Map<string, { diam: number }>();
+  const oppumps = new Set<string>();
+  const pchar = new Map<number, PcharType>();
+
+  const joined = joinContinuationLines(lines);
+
+  let inPchar = false;
+  let pcharType = 0;
+  let pcharSection: 'none' | 'sratio' | 'qratio' | 'hratio' | 'tratio' = 'none';
+  let pcharBuf: { sratio: number[]; qratio: number[]; hratio: number[][]; tratio: number[] } = {
+    sratio: [], qratio: [], hratio: [], tratio: []
+  };
+  let hratioRow: number[] = [];
+
+  const flushPchar = () => {
+    if (hratioRow.length > 0) {
+      pcharBuf.hratio.push([...hratioRow]);
+      hratioRow = [];
+    }
+    if (pcharType > 0 && pcharBuf.sratio.length > 0) {
+      pchar.set(pcharType, {
+        sratio: [...pcharBuf.sratio],
+        qratio: [...pcharBuf.qratio],
+        hratio: pcharBuf.hratio.map(r => [...r]),
+        tratio: [...pcharBuf.tratio]
+      });
+    }
+    pcharBuf = { sratio: [], qratio: [], hratio: [], tratio: [] };
+    hratioRow = [];
+    pcharSection = 'none';
+    inPchar = false;
+    pcharType = 0;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    const upper = trimmed.toUpperCase();
+
+    if (inPchar) {
+      if (/^FINISH\b/i.test(upper)) {
+        flushPchar();
+        continue;
+      }
+
+      if (/^PCHAR\s+TYPE\s+(\d+)/i.test(upper)) {
+        flushPchar();
+        inPchar = true;
+        const m2 = trimmed.match(/^PCHAR\s+TYPE\s+(\d+)/i);
+        pcharType = parseInt(m2![1]);
+        pcharSection = 'none';
+        continue;
+      }
+
+      if (/^SRATIO\b/i.test(upper)) { pcharSection = 'sratio'; continue; }
+      if (/^QRATIO\b/i.test(upper)) { pcharSection = 'qratio'; continue; }
+      if (/^HRATIO\b/i.test(upper)) {
+        pcharSection = 'hratio';
+        if (hratioRow.length > 0) {
+          pcharBuf.hratio.push([...hratioRow]);
+          hratioRow = [];
+        }
+        continue;
+      }
+      if (/^TRATIO\b/i.test(upper)) {
+        if (hratioRow.length > 0) {
+          pcharBuf.hratio.push([...hratioRow]);
+          hratioRow = [];
+        }
+        pcharSection = 'tratio';
+        continue;
+      }
+
+      const nums = trimmed.split(/\s+/).map(parseFloat).filter(n => !isNaN(n));
+      if (nums.length > 0) {
+        if (pcharSection === 'sratio') pcharBuf.sratio.push(...nums);
+        else if (pcharSection === 'qratio') pcharBuf.qratio.push(...nums);
+        else if (pcharSection === 'hratio') {
+          if (nums.length >= 10) {
+            if (hratioRow.length > 0) pcharBuf.hratio.push([...hratioRow]);
+            hratioRow = [...nums];
+          } else {
+            hratioRow.push(...nums);
+          }
+        }
+        else if (pcharSection === 'tratio') pcharBuf.tratio.push(...nums);
+      }
+      continue;
+    }
+
+    if (/^PCHAR\s+TYPE\s+(\d+)/i.test(trimmed)) {
+      const m = trimmed.match(/^PCHAR\s+TYPE\s+(\d+)/i);
+      pcharType = parseInt(m![1]);
+      inPchar = true;
+      pcharSection = 'none';
+      pcharBuf = { sratio: [], qratio: [], hratio: [], tratio: [] };
+      continue;
+    }
+
+    if (/^RESERVOIR\b/i.test(upper)) {
+      let id = '';
+      let elevation = 0;
+      let mode: 'fixed' | 'schedule' = 'fixed';
+      let hScheduleNumber: number | undefined;
+
+      for (let j = i + 1; j < lines.length; j++) {
+        const ln = lines[j].trim();
+        if (!ln) continue;
+        if (/^FINISH\b/i.test(ln)) { i = j; break; }
+        if (/^RESERVOIR\b|^CONDUIT\b|^PUMP\b|^ONEWAY\b|^PCHAR\b|^OPPUMP\b/i.test(ln)) { i = j - 1; break; }
+        const idM = ln.match(/\bID\s+(\S+)/i);
+        if (idM) id = idM[1];
+        const elevM = ln.match(/\bELEV\s+([\-\d.]+)/i);
+        if (elevM) elevation = parseFloat(elevM[1]);
+        const hschedM = ln.match(/\bHSCHEDULE\s+(\d+)/i);
+        if (hschedM) { hScheduleNumber = parseInt(hschedM[1]); mode = 'schedule'; }
+      }
+      if (id) {
+        reservoirs.set(id, { elevation, mode, hScheduleNumber });
+      }
+      continue;
+    }
+
+    if (/^CONDUIT\b/i.test(upper)) {
+      let id = '';
+      let length = 0, diameter = 0, celerity = 0, friction = 0, numseg: number | undefined;
+      let hasAddedLoss = false, cplus = 0, cminus = 0;
+      let variable = false;
+      let distance: number | undefined, area: number | undefined, d: number | undefined, a: number | undefined;
+
+      const fullLine = [trimmed];
+      for (let j = i + 1; j < lines.length; j++) {
+        const ln = lines[j].trim();
+        if (!ln) continue;
+        if (/^FINISH\b/i.test(ln)) {
+          fullLine.push(ln);
+          i = j;
+          break;
+        }
+        if (/^RESERVOIR\b|^CONDUIT\b|^PUMP\b|^ONEWAY\b|^PCHAR\b|^OPPUMP\b/i.test(ln)) {
+          i = j - 1;
+          break;
+        }
+        fullLine.push(ln);
+      }
+      const combined = fullLine.join(' ');
+
+      const idM = combined.match(/\bID\s+(\S+)/i);
+      if (idM) id = idM[1];
+      if (/\bDUMMY\b/i.test(combined)) {
+        const diamM = combined.match(/\bDIAM(?:ETER)?\s+([\-\d.]+)/i);
+        const cplM = combined.match(/\bCPLUS\s+([\-\d.]+)/i);
+        const cmM = combined.match(/\bCMINUS\s+([\-\d.]+)/i);
+        conduits.set(id, {
+          dummy: true,
+          diameter: diamM ? parseFloat(diamM[1]) : 0,
+          cplus: cplM ? parseFloat(cplM[1]) : 0,
+          cminus: cmM ? parseFloat(cmM[1]) : 0,
+        });
+        continue;
+      }
+      const lenM = combined.match(/\bLEN(?:GTH)?\s+([\-\d.]+)/i);
+      if (lenM) length = parseFloat(lenM[1]);
+      const diamM = combined.match(/\bDIAM(?:ETER)?\s+([\-\d.]+)/i);
+      if (diamM) diameter = parseFloat(diamM[1]);
+      const celM = combined.match(/\bCEL(?:ERITY)?\s+([\-\d.]+)/i);
+      if (celM) celerity = parseFloat(celM[1]);
+      const fricM = combined.match(/\bFRIC(?:TION)?\s+([\-\d.]+)/i);
+      if (fricM) friction = parseFloat(fricM[1]);
+      const segM = combined.match(/\bNUMSEG\s+(\d+)/i);
+      if (segM) numseg = parseInt(segM[1]);
+      if (/\bADDEDLOSS\b/i.test(combined)) {
+        hasAddedLoss = true;
+        const cplM2 = combined.match(/\bCPLUS\s+([\-\d.e+]+)/i);
+        const cmM2 = combined.match(/\bCMINUS\s+([\-\d.e+]+)/i);
+        if (cplM2) cplus = parseFloat(cplM2[1]);
+        if (cmM2) cminus = parseFloat(cmM2[1]);
+      }
+      if (/\bVARIABLE\b/i.test(combined)) {
+        variable = true;
+        const dM = combined.match(/\bDISTANCE\s+([\-\d.]+)/i);
+        if (dM) distance = parseFloat(dM[1]);
+        const aM = combined.match(/\bAREA\s+([\-\d.]+)/i);
+        if (aM) area = parseFloat(aM[1]);
+        const dfield = combined.match(/\b D\s+([\-\d.]+)/i);
+        if (dfield) d = parseFloat(dfield[1]);
+        const afield = combined.match(/\b A\s+([\-\d.]+)/i);
+        if (afield) a = parseFloat(afield[1]);
+      }
+      if (id) {
+        conduits.set(id, {
+          length, diameter, celerity, friction,
+          numseg, hasAddedLoss, cplus, cminus,
+          variable, distance, area, d, a
+        });
+      }
+      continue;
+    }
+
+    if (/^PUMP\b/i.test(upper) && !/^PCHAR\b/i.test(upper)) {
+      const fullLine = [trimmed];
+      for (let j = i + 1; j < lines.length; j++) {
+        const ln = lines[j].trim();
+        if (!ln) continue;
+        if (/^FINISH\b/i.test(ln)) {
+          fullLine.push(ln);
+          i = j;
+          break;
+        }
+        if (/^RESERVOIR\b|^CONDUIT\b|^PUMP\b|^ONEWAY\b|^PCHAR\b|^OPPUMP\b/i.test(ln)) {
+          i = j - 1;
+          break;
+        }
+        fullLine.push(ln);
+      }
+      const combined = fullLine.join(' ');
+      const idM = combined.match(/\bID\s+(\S+)/i);
+      const typeM = combined.match(/\bTYPE\s+(\d+)/i);
+      const rqM = combined.match(/\bRQ\s+([\-\d.]+)/i);
+      const rheadM = combined.match(/\bRHEAD\s+([\-\d.]+)/i);
+      const rspeedM = combined.match(/\bRSPEED\s+([\-\d.]+)/i);
+      const rtorqueM = combined.match(/\bRTOROUE\s+([\-\d.]+)/i) || combined.match(/\bRTORQUE\s+([\-\d.]+)/i);
+      const wr2M = combined.match(/\bWR2\s+([\-\d.]+)/i);
+      if (idM) {
+        pumps.set(idM[1], {
+          pumpType: typeM ? parseInt(typeM[1]) : 1,
+          rq: rqM ? parseFloat(rqM[1]) : 0,
+          rhead: rheadM ? parseFloat(rheadM[1]) : 0,
+          rspeed: rspeedM ? parseFloat(rspeedM[1]) : 0,
+          rtorque: rtorqueM ? parseFloat(rtorqueM[1]) : 0,
+          wr2: wr2M ? parseFloat(wr2M[1]) : 0,
+        });
+      }
+      continue;
+    }
+
+    if (/^ONEWAY\b/i.test(upper)) {
+      const idM = trimmed.match(/\bID\s+(\S+)/i);
+      const diamM = trimmed.match(/\bDIAM\s+([\-\d.]+)/i);
+      if (idM) {
+        oneway.set(idM[1], { diam: diamM ? parseFloat(diamM[1]) : 0 });
+      }
+      continue;
+    }
+
+    if (/^OPPUMP\b/i.test(upper)) {
+      const idM = trimmed.match(/\bID\s+(\S+)/i);
+      if (idM) oppumps.add(idM[1]);
+      continue;
+    }
+  }
+
+  if (inPchar) {
+    flushPchar();
+  }
+
+  return { reservoirs, conduits, pumps, oneway, oppumps, pchar };
+}
+
+function buildReactFlowGraph(
+  topo: ParsedTopology,
+  elems: ParsedElements,
+  projectName: string
+): { nodes: WhamoNode[]; edges: WhamoEdge[]; pcharData: Record<number, PcharType> } {
+  const { elemLinks, elemAt, junctions, nodeElevations } = topo;
+  const { reservoirs, conduits, pumps, oneway, oppumps } = elems;
+
+  let rfIdCounter = 1;
+  const nextId = () => String(rfIdCounter++);
+
+  const nodeIdMap = new Map<string, string>();
+  const nodeObjects: WhamoNode[] = [];
+  const edgeObjects: WhamoEdge[] = [];
+
+  const posMap = new Map<string, { x: number; y: number }>();
+
+  const allWhamoNodeIds = new Set<string>();
+  elemLinks.forEach(({ from, to }) => { allWhamoNodeIds.add(from); allWhamoNodeIds.add(to); });
+  elemAt.forEach((nodeId) => allWhamoNodeIds.add(nodeId));
+  nodeElevations.forEach((_, nodeId) => allWhamoNodeIds.add(nodeId));
+
+  const adjacency = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+  allWhamoNodeIds.forEach(id => { adjacency.set(id, []); inDegree.set(id, 0); });
+
+  elemLinks.forEach(({ from, to }) => {
+    adjacency.get(from)?.push(to);
+    inDegree.set(to, (inDegree.get(to) ?? 0) + 1);
+  });
+
+  const sources = [...allWhamoNodeIds].filter(id => (inDegree.get(id) ?? 0) === 0);
+  if (sources.length === 0 && allWhamoNodeIds.size > 0) sources.push([...allWhamoNodeIds][0]);
+
+  const posX = new Map<string, number>();
+  const posY = new Map<string, number>();
+  const visited = new Set<string>();
+  let maxCol = 0;
+  const colCount = new Map<number, number>();
+
+  const bfs = (start: string, startX: number, startY: number) => {
+    const queue: Array<{ id: string; x: number; y: number }> = [{ id: start, x: startX, y: startY }];
+    while (queue.length > 0) {
+      const { id, x, y } = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      posX.set(id, x);
+      posY.set(id, y);
+      maxCol = Math.max(maxCol, x);
+      const neighbors = adjacency.get(id) || [];
+      let ny = y;
+      for (const nb of neighbors) {
+        if (!visited.has(nb)) {
+          const col = x + 1;
+          const cnt = colCount.get(col) ?? 0;
+          colCount.set(col, cnt + 1);
+          queue.push({ id: nb, x: col, y: ny });
+          ny += 1;
+        }
+      }
+    }
+  };
+
+  let startY = 0;
+  for (const src of sources) {
+    if (!visited.has(src)) {
+      bfs(src, 0, startY);
+      startY += 3;
+    }
+  }
+
+  for (const id of allWhamoNodeIds) {
+    if (!visited.has(id)) {
+      posX.set(id, maxCol + 1);
+      posY.set(id, startY++);
+    }
+  }
+
+  const SPACING_X = 220;
+  const SPACING_Y = 160;
+
+  const getPos = (whamoId: string) => ({
+    x: (posX.get(whamoId) ?? 0) * SPACING_X + 80,
+    y: (posY.get(whamoId) ?? 0) * SPACING_Y + 80,
+  });
+
+  const getPumpPos = (from: string, to: string) => {
+    const pf = getPos(from);
+    const pt = getPos(to);
+    return {
+      x: (pf.x + pt.x) / 2,
+      y: (pf.y + pt.y) / 2,
+    };
+  };
+
+  const getOrCreateWhamoNode = (whamoId: string): string => {
+    if (nodeIdMap.has(whamoId)) return nodeIdMap.get(whamoId)!;
+    const rfId = nextId();
+    nodeIdMap.set(whamoId, rfId);
+    const elev = nodeElevations.get(whamoId) ?? 0;
+    const pos = getPos(whamoId);
+    const nodeNum = parseInt(whamoId) || nodeObjects.length + 1;
+    const isJunction = junctions.has(whamoId);
+
+    const resId = [...elemAt.entries()].find(([, nid]) => nid === whamoId)?.[0];
+    if (resId && reservoirs.has(resId)) {
+      const r = reservoirs.get(resId)!;
+      nodeObjects.push({
+        id: rfId,
+        type: 'reservoir',
+        position: pos,
+        data: {
+          label: resId,
+          type: 'reservoir',
+          nodeNumber: nodeNum,
+          elevation: elev,
+          reservoirElevation: r.elevation,
+          mode: r.mode as any,
+          hScheduleNumber: r.hScheduleNumber,
+        }
+      });
+    } else {
+      nodeObjects.push({
+        id: rfId,
+        type: isJunction ? 'junction' : 'node',
+        position: pos,
+        data: {
+          label: `Node ${whamoId}`,
+          type: isJunction ? 'junction' : 'node',
+          nodeNumber: nodeNum,
+          elevation: elev,
+        }
+      });
+    }
+    return rfId;
+  };
+
+  const usedNodePositions = new Set<string>();
+
+  elemLinks.forEach((link, elemId) => {
+    const { from, to } = link;
+
+    if (pumps.has(elemId)) {
+      const p = pumps.get(elemId)!;
+      const rfId = nextId();
+      const pPos = getPumpPos(from, to);
+      const posKey = `${Math.round(pPos.x)},${Math.round(pPos.y)}`;
+      const finalPos = usedNodePositions.has(posKey)
+        ? { x: pPos.x, y: pPos.y + 30 }
+        : pPos;
+      usedNodePositions.add(posKey);
+
+      const fromRfId = getOrCreateWhamoNode(from);
+      const toRfId = getOrCreateWhamoNode(to);
+      const status = oppumps.has(elemId) ? 'ACTIVE' : 'INACTIVE';
+      nodeObjects.push({
+        id: rfId,
+        type: 'pump',
+        position: finalPos,
+        data: {
+          label: elemId,
+          type: 'pump',
+          nodeNumber: parseInt(from) || nodeObjects.length,
+          elevation: nodeElevations.get(from) ?? 0,
+          pumpStatus: status,
+          pumpType: p.pumpType,
+          rq: p.rq,
+          rhead: p.rhead,
+          rspeed: p.rspeed,
+          rtorque: p.rtorque,
+          wr2: p.wr2,
+        }
+      });
+      edgeObjects.push({
+        id: nextId(),
+        source: fromRfId,
+        target: rfId,
+        type: 'connection',
+        data: { label: `${elemId}_in`, type: 'conduit', length: 0, diameter: 0, celerity: 0, friction: 0 }
+      });
+      edgeObjects.push({
+        id: nextId(),
+        source: rfId,
+        target: toRfId,
+        type: 'connection',
+        data: { label: `${elemId}_out`, type: 'conduit', length: 0, diameter: 0, celerity: 0, friction: 0 }
+      });
+      return;
+    }
+
+    if (oneway.has(elemId)) {
+      const vc = oneway.get(elemId)!;
+      const rfId = nextId();
+      const vcPos = getPumpPos(from, to);
+      const fromRfId = getOrCreateWhamoNode(from);
+      const toRfId = getOrCreateWhamoNode(to);
+      nodeObjects.push({
+        id: rfId,
+        type: 'checkValve',
+        position: vcPos,
+        data: {
+          label: elemId,
+          type: 'checkValve',
+          nodeNumber: parseInt(from) || nodeObjects.length,
+          elevation: nodeElevations.get(from) ?? 0,
+          valveStatus: 'OPEN',
+          valveDiam: vc.diam,
+        }
+      });
+      edgeObjects.push({
+        id: nextId(),
+        source: fromRfId,
+        target: rfId,
+        type: 'connection',
+        data: { label: `${elemId}_in`, type: 'conduit', length: 0, diameter: 0, celerity: 0, friction: 0 }
+      });
+      edgeObjects.push({
+        id: nextId(),
+        source: rfId,
+        target: toRfId,
+        type: 'connection',
+        data: { label: `${elemId}_out`, type: 'conduit', length: 0, diameter: 0, celerity: 0, friction: 0 }
+      });
+      return;
+    }
+
+    if (conduits.has(elemId)) {
+      const c = conduits.get(elemId)!;
+      const fromRfId = getOrCreateWhamoNode(from);
+      const toRfId = getOrCreateWhamoNode(to);
+      const edgeId = nextId();
+      if (c.dummy) {
+        edgeObjects.push({
+          id: edgeId,
+          source: fromRfId,
+          target: toRfId,
           type: 'connection',
           data: {
-            label: id,
+            label: elemId,
             type: 'dummy',
-            diameter
+            diameter: c.diameter,
+            hasAddedLoss: c.hasAddedLoss,
+            cplus: c.cplus,
+            cminus: c.cminus,
           }
         });
       } else {
-        // Regular conduit
-        // CONDUIT ID C1 LENG 13405.51 DIAM 34.45 CELE 2852.51 FRIC 0.008
-        const length = parseFloat(parts[parts.indexOf('LENG') + 1]);
-        const diameter = parseFloat(parts[parts.indexOf('DIAM') + 1]);
-        const celerity = parseFloat(parts[parts.indexOf('CELE') + 1]);
-        const friction = parseFloat(parts[parts.indexOf('FRIC') + 1]);
-        
-        edges.push({
-          id: `edge-${id}`,
-          source: '',
-          target: '',
+        edgeObjects.push({
+          id: edgeId,
+          source: fromRfId,
+          target: toRfId,
           type: 'connection',
           data: {
-            label: id,
+            label: elemId,
             type: 'conduit',
-            length,
-            diameter,
-            celerity,
-            friction
+            length: c.length,
+            diameter: c.diameter,
+            celerity: c.celerity,
+            friction: c.friction,
+            numSegments: c.numseg,
+            hasAddedLoss: c.hasAddedLoss,
+            cplus: c.cplus,
+            cminus: c.cminus,
+            variable: c.variable,
+            distance: c.distance,
+            area: c.area,
+            d: c.d,
+            a: c.a,
           }
         });
       }
+      return;
     }
-    
-    // Simplification: In a real app, this parser would be much more robust
-    // For this demo, we'll focus on demonstrating the multi-format support
+
+    const fromRfId = getOrCreateWhamoNode(from);
+    const toRfId = getOrCreateWhamoNode(to);
+    edgeObjects.push({
+      id: nextId(),
+      source: fromRfId,
+      target: toRfId,
+      type: 'connection',
+      data: { label: elemId, type: 'conduit', length: 0, diameter: 0, celerity: 0, friction: 0 }
+    });
+  });
+
+  elemAt.forEach((nodeId, elemId) => {
+    getOrCreateWhamoNode(nodeId);
+  });
+
+  const pcharData: Record<number, PcharType> = {};
+  elems.pchar.forEach((pc, pType) => { pcharData[pType] = pc; });
+
+  return { nodes: nodeObjects, edges: edgeObjects, pcharData };
+}
+
+export function parseInpFile(content: string): {
+  nodes: WhamoNode[];
+  edges: WhamoEdge[];
+  projectName: string;
+  computationalParams?: any;
+  pcharData: Record<number, PcharType>;
+} {
+  const lines = content.split('\n');
+
+  let projectName = 'Imported Network';
+  if (lines.length > 0 && lines[0].trim() && !lines[0].trim().toUpperCase().startsWith('C ') && !/^SYSTEM\b/i.test(lines[0].trim())) {
+    projectName = lines[0].trim();
   }
 
-  return { nodes, edges };
+  let systemStart = -1, systemEnd = -1;
+  let elemPropsStart = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const upper = lines[i].trim().toUpperCase();
+    if (/^SYSTEM\b/.test(upper) && systemStart === -1) { systemStart = i + 1; continue; }
+    if (systemStart !== -1 && systemEnd === -1 && /^FINISH\b/.test(upper)) { systemEnd = i; continue; }
+    if (/^C.*ELEMENT\s+PROP/i.test(lines[i].trim()) || (systemEnd !== -1 && /^RESERVOIR\b|^CONDUIT\b|^PUMP\b|^ONEWAY\b/.test(upper))) {
+      if (elemPropsStart === -1) elemPropsStart = i;
+    }
+  }
+
+  const systemLines = systemStart !== -1 ? lines.slice(systemStart, systemEnd !== -1 ? systemEnd : lines.length) : lines;
+  const propLines = elemPropsStart !== -1 ? lines.slice(elemPropsStart) : lines;
+
+  const topo = parseSystemSection(systemLines);
+  const elems = parseElementProperties(propLines);
+
+  let dtcomp = 0.01, dtout = 0.1, tmax = 500;
+  for (const line of lines) {
+    const m = line.match(/DTCOMP\s+([\d.]+)\s+DTOUT\s+([\d.]+)\s+TMAX\s+([\d.]+)/i);
+    if (m) { dtcomp = parseFloat(m[1]); dtout = parseFloat(m[2]); tmax = parseFloat(m[3]); break; }
+  }
+  const computationalParams = { stages: [{ dtcomp, dtout, tmax }], accutest: 'NONE' as const, includeAccutest: true };
+
+  const { nodes, edges, pcharData } = buildReactFlowGraph(topo, elems, projectName);
+
+  return { nodes, edges, projectName, computationalParams, pcharData };
 }

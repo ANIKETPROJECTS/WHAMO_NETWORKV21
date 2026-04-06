@@ -335,10 +335,10 @@ function DesignerInner() {
             throw new Error("Invalid JSON format");
           }
         } else if (fileName.endsWith('.inp')) {
-          const { nodes, edges } = parseInpFile(content);
+          const { nodes, edges, projectName: parsedName, computationalParams: parsedParams, pcharData } = parseInpFile(content);
           if (nodes.length > 0) {
-            const loadedProjectName = file.name.replace(/\.inp$/i, '');
-            loadNetwork(nodes, edges, undefined, undefined, loadedProjectName, handle);
+            const loadedProjectName = parsedName || file.name.replace(/\.inp$/i, '');
+            loadNetwork(nodes, edges, parsedParams, undefined, loadedProjectName, handle, pcharData);
             setProjectState("active");
             toast({ title: "Project Loaded", description: `Network topology "${loadedProjectName}" restored from .inp file.` });
           } else {
@@ -376,10 +376,10 @@ function DesignerInner() {
             throw new Error("Invalid JSON format");
           }
         } else if (fileName.endsWith('.inp')) {
-          const { nodes, edges } = parseInpFile(content);
+          const { nodes, edges, projectName: parsedName, computationalParams: parsedParams, pcharData } = parseInpFile(content);
           if (nodes.length > 0) {
-            const loadedProjectName = file.name.replace(/\.inp$/i, '');
-            loadNetwork(nodes, edges, undefined, undefined, loadedProjectName);
+            const loadedProjectName = parsedName || file.name.replace(/\.inp$/i, '');
+            loadNetwork(nodes, edges, parsedParams, undefined, loadedProjectName, undefined, pcharData);
             setProjectState("active");
             toast({ title: "Project Loaded", description: `Network topology "${loadedProjectName}" restored from .inp file.` });
           } else {
