@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNetworkStore, type UnitSystem, type PcharType } from '@/lib/store';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -10,8 +10,114 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 
-export function PropertiesPanel() {
+function PcharEditor({ pType, activePc, updatePcharData }: {
+  pType: number;
+  activePc: PcharType;
+  updatePcharData: (pumpType: number, data: PcharType) => void;
+}) {
+  const arrayToText = (arr: number[]) => arr.join(' ');
+  const hratioToText = (m: number[][]) => m.map(r => r.join(' ')).join('\n');
+  const textToArray = (text: string): number[] =>
+    text.trim().split(/[\s,\n]+/).map(parseFloat).filter(n => !isNaN(n));
+  const tratioToText = (f: number[]) => {
+    const lines: string[] = [];
+    for (let i = 0; i < f.length; i += 8) lines.push(f.slice(i, i + 8).join(' '));
+    return lines.join('\n');
+  };
+
   const [showPchar, setShowPchar] = useState(false);
+  const [sratioText, setSratioText] = useState(() => arrayToText(activePc.sratio));
+  const [qratioText, setQratioText] = useState(() => arrayToText(activePc.qratio));
+  const [hratioText, setHratioText] = useState(() => hratioToText(activePc.hratio));
+  const [tratioText, setTratioText] = useState(() => tratioToText(activePc.tratio));
+
+  useEffect(() => {
+    setSratioText(arrayToText(activePc.sratio));
+    setQratioText(arrayToText(activePc.qratio));
+    setHratioText(hratioToText(activePc.hratio));
+    setTratioText(tratioToText(activePc.tratio));
+  }, [pType]);
+
+  const sratioCount = textToArray(sratioText).length;
+  const qratioCount = textToArray(qratioText).length;
+  const expectedTotal = sratioCount * qratioCount;
+
+  const savePchar = (updates: Partial<PcharType>) => {
+    updatePcharData(pType, { ...activePc, ...updates });
+  };
+
+  return (
+    <div className="border rounded-md overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold bg-orange-50 hover:bg-orange-100 transition-colors text-orange-800"
+        onClick={() => setShowPchar(v => !v)}
+        data-testid="btn-toggle-pchar"
+        type="button"
+      >
+        <span>Pump Characteristics (PCHAR TYPE {pType})</span>
+        {showPchar ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </button>
+      {showPchar && (
+        <div className="p-3 space-y-3 bg-white">
+          <p className="text-[10px] text-muted-foreground italic">
+            PCHAR TYPE {pType} data is global — shared across all pumps of this type.
+          </p>
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium">SRATIO ({sratioCount} values, space-separated)</Label>
+            <textarea
+              data-testid="textarea-sratio"
+              className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-10 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              value={sratioText}
+              onChange={(e) => setSratioText(e.target.value)}
+              onBlur={(e) => savePchar({ sratio: textToArray(e.target.value) })}
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium">QRATIO ({qratioCount} values, space-separated)</Label>
+            <textarea
+              data-testid="textarea-qratio"
+              className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-10 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              value={qratioText}
+              onChange={(e) => setQratioText(e.target.value)}
+              onBlur={(e) => savePchar({ qratio: textToArray(e.target.value) })}
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium">
+              HRATIO ({qratioCount} rows × {sratioCount} cols = {expectedTotal} values — one row per line)
+            </Label>
+            <textarea
+              data-testid="textarea-hratio"
+              className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-28 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              value={hratioText}
+              onChange={(e) => setHratioText(e.target.value)}
+              onBlur={(e) => {
+                const rows = e.target.value.trim().split('\n').map(row =>
+                  row.trim().split(/\s+/).map(parseFloat).filter(n => !isNaN(n))
+                ).filter(r => r.length > 0);
+                savePchar({ hratio: rows });
+              }}
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label className="text-[10px] font-medium">
+              TRATIO ({expectedTotal} flat values, space-separated, 8 per line)
+            </Label>
+            <textarea
+              data-testid="textarea-tratio"
+              className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-28 focus:outline-none focus:ring-1 focus:ring-orange-400"
+              value={tratioText}
+              onChange={(e) => setTratioText(e.target.value)}
+              onBlur={(e) => savePchar({ tratio: textToArray(e.target.value) })}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PropertiesPanel() {
 
   const { 
     nodes, 
@@ -534,15 +640,6 @@ export function PropertiesPanel() {
             };
             const activePc = pc || defaultPchar;
 
-            const arrayToText = (arr: number[]) => arr.join(' ');
-            const hratioToText = (m: number[][]) => m.map(r => r.join(' ')).join('\n');
-            const textToArray = (text: string): number[] =>
-              text.trim().split(/[\s,\n]+/).map(parseFloat).filter(n => !isNaN(n));
-
-            const savePchar = (updates: Partial<PcharType>) => {
-              updatePcharData(pType, { ...activePc, ...updates });
-            };
-
             return (
               <>
                 <div className="grid gap-2">
@@ -609,76 +706,7 @@ export function PropertiesPanel() {
                   </div>
                 </div>
 
-                <div className="border rounded-md overflow-hidden">
-                  <button
-                    className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold bg-orange-50 hover:bg-orange-100 transition-colors text-orange-800"
-                    onClick={() => setShowPchar(v => !v)}
-                    data-testid="btn-toggle-pchar"
-                    type="button"
-                  >
-                    <span>Pump Characteristics (PCHAR TYPE {pType})</span>
-                    {showPchar ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                  </button>
-                  {showPchar && (
-                    <div className="p-3 space-y-3 bg-white">
-                      <p className="text-[10px] text-muted-foreground italic">
-                        PCHAR TYPE {pType} data is global — shared across all pumps of this type.
-                      </p>
-                      <div className="grid gap-1">
-                        <Label className="text-[10px] font-medium">SRATIO ({activePc.sratio.length} values, space-separated)</Label>
-                        <textarea
-                          data-testid="textarea-sratio"
-                          className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-10 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                          value={arrayToText(activePc.sratio)}
-                          onChange={(e) => savePchar({ sratio: textToArray(e.target.value) })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label className="text-[10px] font-medium">QRATIO ({activePc.qratio.length} values, space-separated)</Label>
-                        <textarea
-                          data-testid="textarea-qratio"
-                          className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-10 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                          value={arrayToText(activePc.qratio)}
-                          onChange={(e) => savePchar({ qratio: textToArray(e.target.value) })}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label className="text-[10px] font-medium">
-                          HRATIO ({activePc.qratio.length} rows × {activePc.sratio.length} cols = {activePc.qratio.length * activePc.sratio.length} values — one row per line)
-                        </Label>
-                        <textarea
-                          data-testid="textarea-hratio"
-                          className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-28 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                          value={hratioToText(activePc.hratio)}
-                          onChange={(e) => {
-                            const rows = e.target.value.trim().split('\n').map(row =>
-                              row.trim().split(/\s+/).map(parseFloat).filter(n => !isNaN(n))
-                            ).filter(r => r.length > 0);
-                            savePchar({ hratio: rows });
-                          }}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label className="text-[10px] font-medium">
-                          TRATIO ({activePc.qratio.length * activePc.sratio.length} flat values, space-separated, 8 per line)
-                        </Label>
-                        <textarea
-                          data-testid="textarea-tratio"
-                          className="w-full border rounded text-[10px] font-mono p-1.5 resize-none h-28 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                          value={(() => {
-                            const f = activePc.tratio;
-                            const lines: string[] = [];
-                            for (let i = 0; i < f.length; i += 8) {
-                              lines.push(f.slice(i, i + 8).join(' '));
-                            }
-                            return lines.join('\n');
-                          })()}
-                          onChange={(e) => savePchar({ tratio: textToArray(e.target.value) })}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <PcharEditor pType={pType} activePc={activePc} updatePcharData={updatePcharData} />
               </>
             );
           })()}
