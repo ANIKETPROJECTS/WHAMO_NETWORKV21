@@ -51,6 +51,9 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
     outputRequests,
     addOutputRequest,
     removeOutputRequest,
+    snapshotTimes,
+    addSnapshotTime,
+    removeSnapshotTime,
     projectName,
     setProjectNameError,
   } = useNetworkStore();
@@ -58,7 +61,8 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
   const [localParams, setLocalParams] = useState(computationalParams);
   const [selectedElementId, setSelectedElementId] = useState<string>("");
   const [selectedVars, setSelectedVars] = useState<string[]>([]);
-  const [requestType, setRequestType] = useState<"HISTORY" | "PLOT" | "SPREADSHEET">("HISTORY");
+  const [requestType, setRequestType] = useState<"HISTORY" | "PLOT" | "SPREADSHEET" | "SNAPSHOT">("HISTORY");
+  const [snapshotTimeInput, setSnapshotTimeInput] = useState<string>("0");
 
   const handleAddRequest = () => {
     if (!selectedElementId || selectedVars.length === 0) return;
@@ -267,55 +271,57 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
                 </div>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label>Select Element</Label>
-                  <Select value={selectedElementId} onValueChange={setSelectedElementId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select element..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_" disabled>Elements</SelectItem>
-                      {nodes
-                        .filter(n => n.data.type === 'surgeTank' || n.data.type === 'pump' || n.data.type === 'checkValve' || n.type === 'surgeTank' || n.type === 'pump' || n.type === 'checkValve')
-                        .filter(n => !outputRequests.some(req => req.elementId === n.id && req.requestType === requestType && req.isElement))
-                        .map(n => (
-                          <SelectItem key={`element-${n.id}`} value={`element:${n.id}`}>
-                            {n.data.label}
+                {requestType !== "SNAPSHOT" && (
+                  <div className="grid gap-2">
+                    <Label>Select Element</Label>
+                    <Select value={selectedElementId} onValueChange={setSelectedElementId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select element..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_" disabled>Elements</SelectItem>
+                        {nodes
+                          .filter(n => n.data.type === 'surgeTank' || n.data.type === 'pump' || n.data.type === 'checkValve' || n.type === 'surgeTank' || n.type === 'pump' || n.type === 'checkValve')
+                          .filter(n => !outputRequests.some(req => req.elementId === n.id && req.requestType === requestType && req.isElement))
+                          .map(n => (
+                            <SelectItem key={`element-${n.id}`} value={`element:${n.id}`}>
+                              {n.data.label}
+                            </SelectItem>
+                          ))}
+                        <SelectItem value="__" disabled>Nodes</SelectItem>
+                        {nodes
+                          .filter(n => !outputRequests.some(req => req.elementId === n.id && req.requestType === requestType && !req.isElement))
+                          .map(n => (
+                            <SelectItem key={`node-${n.id}`} value={`node:${n.id}`}>
+                              {String(n.data.nodeNumber)}
+                            </SelectItem>
+                          ))}
+                        <SelectItem value="___" disabled>Conduits</SelectItem>
+                        {Array.from(new Map(
+                          edges
+                            .filter(e => e.data?.type === 'conduit')
+                            .filter(e => !outputRequests.some(req => req.elementId === e.id && req.requestType === requestType))
+                            .map(e => [e.data?.label || `Edge ${e.id}`, e])
+                        ).entries()).map(([label, e]) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {label}
                           </SelectItem>
                         ))}
-                      <SelectItem value="__" disabled>Nodes</SelectItem>
-                      {nodes
-                        .filter(n => !outputRequests.some(req => req.elementId === n.id && req.requestType === requestType && !req.isElement))
-                        .map(n => (
-                          <SelectItem key={`node-${n.id}`} value={`node:${n.id}`}>
-                            {String(n.data.nodeNumber)}
+                        <SelectItem value="____" disabled>Dummy pipe</SelectItem>
+                        {Array.from(new Map(
+                          edges
+                            .filter(e => e.data?.type === 'dummy')
+                            .filter(e => !outputRequests.some(req => req.elementId === e.id && req.requestType === requestType))
+                            .map(e => [e.data?.label || `Edge ${e.id}`, e])
+                        ).entries()).map(([label, e]) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {label}
                           </SelectItem>
                         ))}
-                      <SelectItem value="___" disabled>Conduits</SelectItem>
-                      {Array.from(new Map(
-                        edges
-                          .filter(e => e.data?.type === 'conduit')
-                          .filter(e => !outputRequests.some(req => req.elementId === e.id && req.requestType === requestType))
-                          .map(e => [e.data?.label || `Edge ${e.id}`, e])
-                      ).entries()).map(([label, e]) => (
-                        <SelectItem key={e.id} value={e.id}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="____" disabled>Dummy pipe</SelectItem>
-                      {Array.from(new Map(
-                        edges
-                          .filter(e => e.data?.type === 'dummy')
-                          .filter(e => !outputRequests.some(req => req.elementId === e.id && req.requestType === requestType))
-                          .map(e => [e.data?.label || `Edge ${e.id}`, e])
-                      ).entries()).map(([label, e]) => (
-                        <SelectItem key={e.id} value={e.id}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="grid gap-2">
                   <Label>Request Type</Label>
                   <Select value={requestType} onValueChange={(v: any) => {
@@ -328,64 +334,110 @@ export function Toolbar({ onExport, onSave, onLoad }: { onExport: (fileName?: st
                       <SelectItem value="HISTORY">HISTORY</SelectItem>
                       <SelectItem value="PLOT">PLOT</SelectItem>
                       <SelectItem value="SPREADSHEET">SPREADSHEET</SelectItem>
+                      <SelectItem value="SNAPSHOT">SNAPSHOT</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Variables</Label>
-                  <div className="flex flex-wrap gap-4">
-                    {availableVars.map(v => (
-                      <div key={v} className="flex items-center gap-2">
-                        <Checkbox 
-                          id={`toolbar-var-${v}`} 
-                          checked={selectedVars.includes(v)}
-                          onCheckedChange={(checked) => {
-                            if (checked) setSelectedVars([...selectedVars, v]);
-                            else setSelectedVars(selectedVars.filter(sv => sv !== v));
-                          }}
-                        />
-                        <Label htmlFor={`toolbar-var-${v}`}>{v}</Label>
+                {requestType === "SNAPSHOT" ? (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>TIME</Label>
+                      <input
+                        type="number"
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        value={snapshotTimeInput}
+                        onChange={(e) => setSnapshotTimeInput(e.target.value)}
+                        placeholder="e.g. 0"
+                        data-testid="input-snapshot-time-toolbar"
+                      />
+                    </div>
+                    <Button
+                      onClick={() => {
+                        const t = parseFloat(snapshotTimeInput);
+                        if (!isNaN(t)) {
+                          addSnapshotTime(t);
+                          setSnapshotTimeInput("0");
+                        }
+                      }}
+                      data-testid="button-add-snapshot-toolbar"
+                    >
+                      Add Snapshot
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Variables</Label>
+                      <div className="flex flex-wrap gap-4">
+                        {availableVars.map(v => (
+                          <div key={v} className="flex items-center gap-2">
+                            <Checkbox 
+                              id={`toolbar-var-${v}`} 
+                              checked={selectedVars.includes(v)}
+                              onCheckedChange={(checked) => {
+                                if (checked) setSelectedVars([...selectedVars, v]);
+                                else setSelectedVars(selectedVars.filter(sv => sv !== v));
+                              }}
+                            />
+                            <Label htmlFor={`toolbar-var-${v}`}>{v}</Label>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <Button onClick={handleAddRequest}>Add Request</Button>
+                    </div>
+                    <Button onClick={handleAddRequest} data-testid="button-add-request-toolbar">Add Request</Button>
+                  </>
+                )}
                 
                 <Separator />
                 
                 <div className="max-h-[200px] overflow-auto">
                   <Label className="mb-2 block">Current Requests ({requestType})</Label>
-                  {[...outputRequests]
-                    .filter(req => req.requestType === requestType)
-                    .sort((a, b) => {
-                      const elA = nodes.find(n => n.id === a.elementId) || edges.find(e => e.id === a.elementId);
-                      const elB = nodes.find(n => n.id === b.elementId) || edges.find(e => e.id === b.elementId);
-                      
-                      const getSortKey = (el) => {
-                        if (!el) return "zzzz";
-                        if (el.data?.nodeNumber !== undefined) return `node-${String(el.data.nodeNumber).padStart(10, '0')}`;
-                        return `edge-${el.data?.label || el.id}`;
-                      };
-                      
-                      return getSortKey(elA).localeCompare(getSortKey(elB), undefined, { numeric: true });
+                  {requestType === "SNAPSHOT" ? (
+                    snapshotTimes.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No snapshots added yet.</p>
+                    ) : (
+                      snapshotTimes.map((t, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm py-1 border-b">
+                          <span>SNAPSHOT TIME {t}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeSnapshotTime(i)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))
+                    )
+                  ) : (
+                    [...outputRequests]
+                      .filter(req => req.requestType === requestType)
+                      .sort((a, b) => {
+                        const elA = nodes.find(n => n.id === a.elementId) || edges.find(e => e.id === a.elementId);
+                        const elB = nodes.find(n => n.id === b.elementId) || edges.find(e => e.id === b.elementId);
+                        
+                        const getSortKey = (el) => {
+                          if (!el) return "zzzz";
+                          if (el.data?.nodeNumber !== undefined) return `node-${String(el.data.nodeNumber).padStart(10, '0')}`;
+                          return `edge-${el.data?.label || el.id}`;
+                        };
+                        
+                        return getSortKey(elA).localeCompare(getSortKey(elB), undefined, { numeric: true });
+                      })
+                      .map(req => {
+                      const el = nodes.find(n => n.id === req.elementId) || edges.find(e => e.id === req.elementId);
+                      const isSpecialElemType = el?.data?.type === 'surgeTank' || el?.data?.type === 'pump' || el?.data?.type === 'checkValve' || el?.type === 'surgeTank' || el?.type === 'pump' || el?.type === 'checkValve';
+                      const isNodeElement = req.elementType === 'node' && isSpecialElemType && req.isElement;
+                      const displayLabel = isNodeElement 
+                        ? el?.data?.label 
+                        : (el?.data?.nodeNumber?.toString() || el?.data?.label || req.elementId);
+                      const prefix = isNodeElement ? 'ELEM' : (req.elementType === 'node' ? 'NODE' : 'Node');
+                      return (
+                        <div key={`${req.id}-${req.requestType}`} className="flex items-center justify-between text-sm py-1 border-b">
+                          <span>{prefix} {displayLabel} ({req.requestType}): {req.variables.join(', ')}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeOutputRequest(req.id)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      );
                     })
-                    .map(req => {
-                    const el = nodes.find(n => n.id === req.elementId) || edges.find(e => e.id === req.elementId);
-                    const isSpecialElemType = el?.data?.type === 'surgeTank' || el?.data?.type === 'pump' || el?.data?.type === 'checkValve' || el?.type === 'surgeTank' || el?.type === 'pump' || el?.type === 'checkValve';
-                    const isNodeElement = req.elementType === 'node' && isSpecialElemType && req.isElement;
-                    const displayLabel = isNodeElement 
-                      ? el?.data?.label 
-                      : (el?.data?.nodeNumber?.toString() || el?.data?.label || req.elementId);
-                    const prefix = isNodeElement ? 'ELEM' : (req.elementType === 'node' ? 'NODE' : 'Node');
-                    return (
-                      <div key={`${req.id}-${req.requestType}`} className="flex items-center justify-between text-sm py-1 border-b">
-                        <span>{prefix} {displayLabel} ({req.requestType}): {req.variables.join(', ')}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeOutputRequest(req.id)}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    );
-                  })}
+                  )}
                 </div>
               </div>
             </DialogContent>

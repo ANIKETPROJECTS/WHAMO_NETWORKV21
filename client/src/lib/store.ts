@@ -107,6 +107,7 @@ interface NetworkState {
   selectedElementType: 'node' | 'edge' | null;
   computationalParams: ComputationalParameters;
   outputRequests: OutputRequest[];
+  snapshotTimes: number[];
   isLocked: boolean;
   projectName: string;
   projectNameError: string | null;
@@ -135,6 +136,8 @@ interface NetworkState {
   updateComputationalParams: (params: Partial<ComputationalParameters>) => void;
   addOutputRequest: (request: Omit<OutputRequest, 'id'>) => void;
   removeOutputRequest: (id: string) => void;
+  addSnapshotTime: (time: number) => void;
+  removeSnapshotTime: (index: number) => void;
   toggleLock: () => void;
   setProjectName: (name: string) => void;
   setProjectNameError: (error: string | null) => void;
@@ -169,6 +172,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     includeAccutest: true,
   },
   outputRequests: [],
+  snapshotTimes: [],
   isLocked: false,
   projectName: "Untitled Network",
   projectNameError: null,
@@ -880,6 +884,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       selectedElementId: null, 
       selectedElementType: null, 
       outputRequests: [],
+      snapshotTimes: [],
       projectName: "Untitled Network",
       loadedFileHandle: null
     });
@@ -979,6 +984,14 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   removeOutputRequest: (id) => {
     get().saveToHistory();
     set({ outputRequests: get().outputRequests.filter(r => r.id !== id) });
+  },
+
+  addSnapshotTime: (time) => {
+    set({ snapshotTimes: [...get().snapshotTimes, time] });
+  },
+
+  removeSnapshotTime: (index) => {
+    set({ snapshotTimes: get().snapshotTimes.filter((_, i) => i !== index) });
   },
 
   toggleLock: () => {

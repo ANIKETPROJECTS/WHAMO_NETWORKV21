@@ -107,6 +107,9 @@ export function Header({
     outputRequests,
     addOutputRequest,
     removeOutputRequest,
+    snapshotTimes,
+    addSnapshotTime,
+    removeSnapshotTime,
     projectName,
     setProjectName,
     projectNameError,
@@ -123,8 +126,9 @@ export function Header({
   const [selectedElementId, setSelectedElementId] = useState<string>("");
   const [selectedVars, setSelectedVars] = useState<string[]>([]);
   const [requestType, setRequestType] = useState<
-    "HISTORY" | "PLOT" | "SPREADSHEET"
+    "HISTORY" | "PLOT" | "SPREADSHEET" | "SNAPSHOT"
   >("HISTORY");
+  const [snapshotTimeInput, setSnapshotTimeInput] = useState<string>("0");
 
   useEffect(() => {
     setLocalParams(computationalParams);
@@ -633,96 +637,98 @@ export function Header({
                       </div>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label>Select Element</Label>
-                        <Select
-                          value={selectedElementId}
-                          onValueChange={setSelectedElementId}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select element..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="_" disabled>
-                              Elements
-                            </SelectItem>
-                            {nodes
-                              .filter((n) => n.data.type === "surgeTank")
-                              .filter(
-                                (n) =>
-                                  !outputRequests.some(
-                                    (req) =>
-                                      req.elementId === n.id &&
-                                      req.requestType === requestType &&
-                                      req.isElement,
-                                  ),
-                              )
-                              .map((n) => (
-                                <SelectItem key={`element-${n.id}`} value={`element:${n.id}`}>
-                                  {n.data.label}
-                                </SelectItem>
-                              ))}
-                            <SelectItem value="__" disabled>
-                              Nodes
-                            </SelectItem>
-                            {nodes
-                              .filter(
-                                (n) =>
-                                  !outputRequests.some(
-                                    (req) =>
-                                      req.elementId === n.id &&
-                                      req.requestType === requestType &&
-                                      !req.isElement,
-                                  ),
-                              )
-                              .map((n) => (
-                                <SelectItem key={`node-${n.id}`} value={`node:${n.id}`}>
-                                  {String(n.data.nodeNumber)}
-                                </SelectItem>
-                              ))}
-                            <SelectItem value="___" disabled>
-                              Conduits
-                            </SelectItem>
-                            {Array.from(new Map(
-                              edges
-                                .filter((e) => e.data?.type === "conduit")
+                      {requestType !== "SNAPSHOT" && (
+                        <div className="grid gap-2">
+                          <Label>Select Element</Label>
+                          <Select
+                            value={selectedElementId}
+                            onValueChange={setSelectedElementId}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select element..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_" disabled>
+                                Elements
+                              </SelectItem>
+                              {nodes
+                                .filter((n) => n.data.type === "surgeTank")
                                 .filter(
-                                  (e) =>
+                                  (n) =>
                                     !outputRequests.some(
                                       (req) =>
-                                        req.elementId === e.id &&
-                                        req.requestType === requestType,
+                                        req.elementId === n.id &&
+                                        req.requestType === requestType &&
+                                        req.isElement,
                                     ),
                                 )
-                                .map(e => [e.data?.label || `Edge ${e.id}`, e])
-                            ).entries()).map(([label, e]) => (
-                              <SelectItem key={e.id} value={e.id}>
-                                {label}
+                                .map((n) => (
+                                  <SelectItem key={`element-${n.id}`} value={`element:${n.id}`}>
+                                    {n.data.label}
+                                  </SelectItem>
+                                ))}
+                              <SelectItem value="__" disabled>
+                                Nodes
                               </SelectItem>
-                            ))}
-                            <SelectItem value="____" disabled>
-                              Dummy pipe
-                            </SelectItem>
-                            {Array.from(new Map(
-                              edges
-                                .filter((e) => e.data?.type === "dummy")
+                              {nodes
                                 .filter(
-                                  (e) =>
+                                  (n) =>
                                     !outputRequests.some(
                                       (req) =>
-                                        req.elementId === e.id &&
-                                        req.requestType === requestType,
+                                        req.elementId === n.id &&
+                                        req.requestType === requestType &&
+                                        !req.isElement,
                                     ),
                                 )
-                                .map(e => [e.data?.label || `Edge ${e.id}`, e])
-                            ).entries()).map(([label, e]) => (
-                              <SelectItem key={e.id} value={e.id}>
-                                {label}
+                                .map((n) => (
+                                  <SelectItem key={`node-${n.id}`} value={`node:${n.id}`}>
+                                    {String(n.data.nodeNumber)}
+                                  </SelectItem>
+                                ))}
+                              <SelectItem value="___" disabled>
+                                Conduits
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                              {Array.from(new Map(
+                                edges
+                                  .filter((e) => e.data?.type === "conduit")
+                                  .filter(
+                                    (e) =>
+                                      !outputRequests.some(
+                                        (req) =>
+                                          req.elementId === e.id &&
+                                          req.requestType === requestType,
+                                      ),
+                                  )
+                                  .map(e => [e.data?.label || `Edge ${e.id}`, e])
+                              ).entries()).map(([label, e]) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                              <SelectItem value="____" disabled>
+                                Dummy pipe
+                              </SelectItem>
+                              {Array.from(new Map(
+                                edges
+                                  .filter((e) => e.data?.type === "dummy")
+                                  .filter(
+                                    (e) =>
+                                      !outputRequests.some(
+                                        (req) =>
+                                          req.elementId === e.id &&
+                                          req.requestType === requestType,
+                                      ),
+                                  )
+                                  .map(e => [e.data?.label || `Edge ${e.id}`, e])
+                              ).entries()).map(([label, e]) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       <div className="grid gap-2">
                         <Label>Request Type</Label>
                         <Select
@@ -738,38 +744,89 @@ export function Header({
                             <SelectItem value="SPREADSHEET">
                               SPREADSHEET
                             </SelectItem>
+                            <SelectItem value="SNAPSHOT">SNAPSHOT</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="grid gap-2">
-                        <Label>Variables</Label>
-                        <div className="flex flex-wrap gap-4">
-                          {availableVars.map((v) => (
-                            <div key={v} className="flex items-center gap-2">
-                              <Checkbox
-                                id={`header-var-${v}`}
-                                checked={selectedVars.includes(v)}
-                                onCheckedChange={(checked) => {
-                                  if (checked)
-                                    setSelectedVars([...selectedVars, v]);
-                                  else
-                                    setSelectedVars(
-                                      selectedVars.filter((sv) => sv !== v),
-                                    );
-                                }}
-                              />
-                              <Label htmlFor={`header-var-${v}`}>{v}</Label>
+                      {requestType === "SNAPSHOT" ? (
+                        <>
+                          <div className="grid gap-2">
+                            <Label>TIME</Label>
+                            <input
+                              type="number"
+                              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              value={snapshotTimeInput}
+                              onChange={(e) => setSnapshotTimeInput(e.target.value)}
+                              placeholder="e.g. 0"
+                              data-testid="input-snapshot-time"
+                            />
+                          </div>
+                          <Button
+                            onClick={() => {
+                              const t = parseFloat(snapshotTimeInput);
+                              if (!isNaN(t)) {
+                                addSnapshotTime(t);
+                                setSnapshotTimeInput("0");
+                                toast({ title: "Snapshot Added", description: `SNAPSHOT TIME ${t} added.` });
+                              }
+                            }}
+                            data-testid="button-add-snapshot"
+                          >
+                            Add Snapshot
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="grid gap-2">
+                            <Label>Variables</Label>
+                            <div className="flex flex-wrap gap-4">
+                              {availableVars.map((v) => (
+                                <div key={v} className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`header-var-${v}`}
+                                    checked={selectedVars.includes(v)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked)
+                                        setSelectedVars([...selectedVars, v]);
+                                      else
+                                        setSelectedVars(
+                                          selectedVars.filter((sv) => sv !== v),
+                                        );
+                                    }}
+                                  />
+                                  <Label htmlFor={`header-var-${v}`}>{v}</Label>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                      <Button onClick={handleAddRequest}>Add Request</Button>
+                          </div>
+                          <Button onClick={handleAddRequest} data-testid="button-add-request">Add Request</Button>
+                        </>
+                      )}
 
                       <Separator />
 
                       <div className="max-h-[200px] overflow-auto">
                         <Label className="mb-2 block">Current Requests ({requestType})</Label>
-                        {[...outputRequests]
+                        {requestType === "SNAPSHOT" ? (
+                          snapshotTimes.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No snapshots added yet.</p>
+                          ) : (
+                            snapshotTimes.map((t, i) => (
+                              <div key={i} className="flex items-center justify-between text-sm py-1 border-b">
+                                <span>SNAPSHOT TIME {t}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => removeSnapshotTime(i)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ))
+                          )
+                        ) : (
+                          [...outputRequests]
                           .filter((req) => req.requestType === requestType)
                           .sort((a, b) => {
                             const elA = nodes.find((n) => n.id === a.elementId) || edges.find((e) => e.id === a.elementId);
@@ -811,7 +868,8 @@ export function Header({
                                 </Button>
                               </div>
                             );
-                          })}
+                          })
+                        )}
                       </div>
                     </div>
                   </DialogContent>
