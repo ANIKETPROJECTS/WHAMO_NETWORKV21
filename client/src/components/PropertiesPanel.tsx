@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Trash2, ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronRight, Plus, CheckCircle2, BookCopy } from 'lucide-react';
 
 function PcharEditor({ pType, activePc, updatePcharData }: {
   pType: number;
@@ -130,6 +130,7 @@ export function PropertiesPanel() {
   } = useNetworkStore();
 
   const [newTypeNum, setNewTypeNum] = useState<string>("");
+  const [profileApplied, setProfileApplied] = useState<string | null>(null);
 
   if (!selectedElementId) return null;
 
@@ -287,6 +288,51 @@ export function PropertiesPanel() {
     }
   };
 
+  const PROFILE_FIELDS = [
+    'type', 'length', 'diameter', 'celerity', 'friction', 'numSegments',
+    'variable', 'distance', 'area', 'd', 'a', 'pipeE', 'pipeWT', 'manningsN',
+    'cplus', 'cminus', 'hasAddedLoss', 'includeNumSegments',
+  ];
+
+  const getAvailableProfiles = () => {
+    const seen = new Set<string>();
+    return edges.filter(e => {
+      if (e.id === selectedElementId) return false;
+      if (e.data?.type !== 'conduit' && e.data?.type !== 'dummy') return false;
+      const lbl = (e.data?.label as string) || '';
+      if (!lbl || seen.has(lbl)) return false;
+      seen.add(lbl);
+      return true;
+    });
+  };
+
+  const applyProfile = (sourceEdge: typeof edges[0]) => {
+    const update: Record<string, any> = {};
+    PROFILE_FIELDS.forEach(field => {
+      const val = (sourceEdge.data as any)?.[field];
+      if (val !== undefined) update[field] = val;
+    });
+    if (sourceEdge.data?._unitCache) {
+      update._unitCache = sourceEdge.data._unitCache;
+    }
+    updateEdgeData(selectedElementId!, update);
+    const lbl = (sourceEdge.data?.label as string) || '';
+    setProfileApplied(lbl);
+    setTimeout(() => setProfileApplied(null), 3000);
+  };
+
+  const handleLabelChange = (newLabel: string) => {
+    handleChange('label', newLabel);
+    if (!isNode && newLabel.trim()) {
+      const match = edges.find(e =>
+        e.id !== selectedElementId &&
+        (e.data?.label as string) === newLabel.trim() &&
+        (e.data?.type === 'conduit' || e.data?.type === 'dummy')
+      );
+      if (match) applyProfile(match);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-card border-l border-border">
       <CardHeader className="pb-4 border-b border-border/50 bg-muted/20">
@@ -334,9 +380,26 @@ export function PropertiesPanel() {
             <Label htmlFor="label">Label / ID</Label>
             <Input 
               id="label" 
+              data-testid="input-label"
               value={element.data?.label || ''} 
-              onChange={(e) => handleChange('label', e.target.value)} 
+              onChange={(e) => isNode ? handleChange('label', e.target.value) : handleLabelChange(e.target.value)} 
             />
+            {!isNode && (() => {
+              const lbl = (element.data?.label as string) || '';
+              const others = edges.filter(e => e.id !== selectedElementId && (e.data?.label as string) === lbl && (e.data?.type === 'conduit' || e.data?.type === 'dummy'));
+              return others.length > 0 && !profileApplied ? (
+                <p className="text-[10px] text-blue-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Profile auto-applied from existing &quot;{lbl}&quot;
+                </p>
+              ) : null;
+            })()}
+            {profileApplied && (
+              <p className="text-[10px] text-green-600 flex items-center gap-1" data-testid="text-profile-applied">
+                <CheckCircle2 className="h-3 w-3" />
+                Profile &quot;{profileApplied}&quot; applied
+              </p>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="comment">Comment</Label>
@@ -374,6 +437,46 @@ export function PropertiesPanel() {
               </RadioGroup>
             </div>
           )}
+
+          {!isNode && (() => {
+            const profiles = getAvailableProfiles();
+            if (profiles.length === 0) return null;
+            return (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2 mb-2">
+                <div className="flex items-center gap-1.5">
+                  <BookCopy className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <Label className="text-xs font-semibold text-blue-700">Load from Profile</Label>
+                </div>
+                <Select
+                  value=""
+                  onValueChange={(edgeId) => {
+                    const src = edges.find(e => e.id === edgeId);
+                    if (src) applyProfile(src);
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-white" data-testid="select-profile">
+                    <SelectValue placeholder="Select a saved profile…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(e => (
+                      <SelectItem key={e.id} value={e.id} className="text-xs">
+                        <span className="font-medium">{e.data?.label as string}</span>
+                        <span className="ml-2 text-muted-foreground capitalize">({e.data?.type as string})</span>
+                        {(e.data?.length !== undefined || e.data?.diameter !== undefined) && (
+                          <span className="ml-1 text-muted-foreground">
+                            — L:{e.data?.length ?? '?'} D:{e.data?.diameter ?? '?'}
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-blue-500">
+                  Copies all parameters from an existing conduit/dummy pipe. Label stays unchanged.
+                </p>
+              </div>
+            );
+          })()}
 
           {isNode && (element.data?.type === 'node' || element.data?.type === 'junction' || element.data?.type === 'reservoir' || element.data?.type === 'surgeTank' || element.data?.type === 'flowBoundary' || element.data?.type_st) && (
             <>
