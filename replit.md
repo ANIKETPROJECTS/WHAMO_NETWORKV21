@@ -77,3 +77,11 @@ Preferred communication style: Simple, everyday language.
 - **Vite**: Frontend build tool with HMR
 - **tsx**: TypeScript execution for server
 - **esbuild**: Production server bundling
+
+## Replit Environment Notes
+
+- The app runs on port 5000 (required for webview output on Replit)
+- Workflow: `Start application` runs `npm run dev` and exposes port 5000 as a webview
+- Deployment build: `npm run build` → `node ./dist/index.cjs`
+- No database is required — in-memory storage is used
+- The WHAMO engine (`server/engines/WHAMO.EXE`) requires `wine` to run on Linux
