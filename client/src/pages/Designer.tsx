@@ -552,6 +552,9 @@ function DesignerInner() {
   const [diagramSvg, setDiagramSvg] = useState<string | null>(null);
   const [showShortcutConsole, setShowShortcutConsole] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  const [visualizationOutContent, setVisualizationOutContent] = useState<string | null>(null);
+  const [visualizationFileName, setVisualizationFileName] = useState<string>("");
+  const [isRunningSimulation, setIsRunningSimulation] = useState(false);
 
   useEffect(() => {
     const handleToggleGrid = () => setShowGrid((prev) => !prev);
@@ -576,6 +579,50 @@ function DesignerInner() {
     // environments (like Replit preview), losing the gesture and preventing the
     // fallback click from working.
     fileInputRef.current?.click();
+  };
+
+  const handleVisualizationClick = async () => {
+    if (nodes.length === 0) {
+      setVisualizationOutContent(null);
+      setVisualizationFileName("");
+      setShowVisualization(true);
+      return;
+    }
+
+    setIsRunningSimulation(true);
+    try {
+      const inpContent = generateInpFile(nodes as WhamoNode[], edges as WhamoEdge[], false);
+      const response = await fetch("/api/generate-out", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inpContent }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success || !data.files?.out) {
+        throw new Error(data.error || "Simulation failed. Make sure the WHAMO engine is available on the server.");
+      }
+
+      const binary = atob(data.files.out);
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+      const outContent = new TextDecoder("utf-8").decode(bytes);
+
+      const name = (projectName && projectName !== "Untitled Network") ? projectName : "simulation";
+      setVisualizationOutContent(outContent);
+      setVisualizationFileName(`${name}.OUT`);
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Simulation Failed",
+        description: err.message,
+      });
+      setVisualizationOutContent(null);
+      setVisualizationFileName("");
+    } finally {
+      setIsRunningSimulation(false);
+      setShowVisualization(true);
+    }
   };
 
   const [showDiagram, setShowDiagram] = useState(false);
@@ -721,12 +768,33 @@ function DesignerInner() {
           setDiagramSvg(svg);
           setShowDiagram(true);
         }}
-        onVisualization={() => setShowVisualization(true)}
+        onVisualization={handleVisualizationClick}
       />
+
+      {/* Simulation running overlay */}
+      {isRunningSimulation && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4 min-w-[280px]">
+            <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+            <div className="text-center">
+              <p className="text-base font-semibold text-gray-800">Running Simulation</p>
+              <p className="text-sm text-gray-400 mt-1">WHAMO is processing your network...</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Visualization View overlay */}
       {showVisualization && (
-        <VisualizationView onClose={() => setShowVisualization(false)} />
+        <VisualizationView
+          onClose={() => {
+            setShowVisualization(false);
+            setVisualizationOutContent(null);
+            setVisualizationFileName("");
+          }}
+          initialOutContent={visualizationOutContent ?? undefined}
+          initialFileName={visualizationFileName || undefined}
+        />
       )}
 
       {/* Main Content Area */}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import ProfileChart from "./ProfileChart";
 import DataTable from "./DataTable";
 import HistoryGraph from "./HistoryGraph";
@@ -11,43 +11,55 @@ import {
 
 interface VisualizationViewProps {
   onClose: () => void;
+  initialOutContent?: string;
+  initialFileName?: string;
 }
 
-export function VisualizationView({ onClose }: VisualizationViewProps) {
+export function VisualizationView({ onClose, initialOutContent, initialFileName }: VisualizationViewProps) {
   const [summary, setSummary] = useState<SimulationSummary | null>(null);
   const [historyData, setHistoryData] = useState<HistoryData | null>(null);
-  const [fileName, setFileName] = useState("");
+  const [fileName, setFileName] = useState(initialFileName || "");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [activeGraph, setActiveGraph] = useState<"profile" | "history">("profile");
   const [showTable, setShowTable] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback((file: File) => {
+  const parseContent = useCallback((content: string, name: string) => {
     setIsLoading(true);
     setError("");
+    try {
+      const parsed = parseOutFile(content);
+      if (parsed.nodes.length === 0)
+        throw new Error("No valid data rows found in the Simulation Summary section.");
+      setSummary(parsed);
+      setFileName(name);
+      const history = parseHistoryData(content);
+      setHistoryData(history.nodes.length > 0 ? history : null);
+      setActiveGraph("profile");
+    } catch (err: any) {
+      setError(err.message || "Failed to parse file.");
+      setSummary(null);
+      setHistoryData(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialOutContent) {
+      parseContent(initialOutContent, initialFileName || "simulation.OUT");
+    }
+  }, [initialOutContent, initialFileName, parseContent]);
+
+  const handleFile = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsed = parseOutFile(content);
-        if (parsed.nodes.length === 0)
-          throw new Error("No valid data rows found in the Simulation Summary section.");
-        setSummary(parsed);
-        setFileName(file.name);
-        const history = parseHistoryData(content);
-        setHistoryData(history.nodes.length > 0 ? history : null);
-        setActiveGraph("profile");
-      } catch (err: any) {
-        setError(err.message || "Failed to parse file.");
-        setSummary(null);
-        setHistoryData(null);
-      } finally {
-        setIsLoading(false);
-      }
+      const content = e.target?.result as string;
+      parseContent(content, file.name);
     };
     reader.readAsText(file);
-  }, []);
+  }, [parseContent]);
 
   const handleClear = useCallback(() => {
     setSummary(null);
@@ -67,13 +79,11 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
       {/* Header */}
       <header className="bg-white border-b border-gray-100 shadow-sm shrink-0">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4 flex-wrap">
-          {/* Icon + title */}
           <div className="flex items-center gap-2 shrink-0">
             <BarChart2 className="w-5 h-5 text-blue-500" />
             <span className="text-base font-bold text-gray-900">WHAMO Visualization</span>
           </div>
 
-          {/* File metadata when loaded */}
           {summary && (
             <>
               <div className="w-px h-5 bg-gray-200 shrink-0" />
@@ -109,7 +119,6 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
 
           <div className="flex-1" />
 
-          {/* Graph type tabs */}
           {summary && (
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 shrink-0">
               <button
@@ -137,7 +146,6 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
             </div>
           )}
 
-          {/* Upload / clear file */}
           {!summary ? (
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -156,7 +164,6 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
             </button>
           )}
 
-          {/* Close visualization */}
           <button
             onClick={onClose}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold transition-colors shrink-0"
@@ -167,7 +174,6 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
         </div>
       </header>
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -180,26 +186,32 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
         }}
       />
 
-      {/* Main content */}
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto px-6 py-8">
 
-          {/* Loading */}
           {isLoading && (
-            <div className="flex items-center justify-center py-20">
-              <div className="text-sm text-gray-400">Parsing file...</div>
+            <div className="flex flex-col items-center justify-center py-24 gap-4">
+              <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+              <p className="text-sm text-gray-400 font-medium">Parsing simulation output...</p>
             </div>
           )}
 
-          {/* Error when no file */}
           {!summary && !isLoading && error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-4 py-3 max-w-md mx-auto mt-6">
-              <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-              <p className="text-sm text-red-600">{error}</p>
+            <div className="flex flex-col items-center justify-center py-24 gap-6">
+              <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-5 py-4 max-w-md">
+                <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Load .OUT File Manually
+              </button>
             </div>
           )}
 
-          {/* Upload prompt */}
           {!summary && !isLoading && !error && (
             <div className="flex flex-col items-center justify-center py-24 gap-6">
               <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center">
@@ -219,15 +231,11 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
             </div>
           )}
 
-          {/* File loaded */}
           {summary && !isLoading && (
             <div className="space-y-5">
-
-              {/* PROFILE TAB */}
               {activeGraph === "profile" && (
                 <>
                   <ProfileChart nodes={summary.nodes} units={summary.units} />
-
                   <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
                     <button
                       onClick={() => setShowTable(!showTable)}
@@ -251,7 +259,6 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
                 </>
               )}
 
-              {/* HISTORY TAB */}
               {activeGraph === "history" && historyData && (
                 <HistoryGraph data={historyData} summaryTitle={chartTitle} />
               )}
@@ -261,7 +268,7 @@ export function VisualizationView({ onClose }: VisualizationViewProps) {
                   onClick={handleClear}
                   className="text-sm text-blue-500 hover:text-blue-700 transition-colors"
                 >
-                  Upload a different file
+                  Load a different file
                 </button>
               </div>
             </div>
