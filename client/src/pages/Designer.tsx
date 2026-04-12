@@ -61,6 +61,7 @@ import {
 
 import { ValidationModal } from '@/components/ValidationModal';
 import { validateNetwork, ValidationError } from '@/lib/validator';
+import { VisualizationView } from '@/components/visualization/VisualizationView';
 
 const nodeTypes = {
   reservoir: ReservoirNode,
@@ -82,6 +83,7 @@ function DesignerInner() {
   const { zoomIn, zoomOut, fitView, screenToFlowPosition } = useReactFlow();
   const [validationData, setValidationData] = useState<{ errors: ValidationError[], warnings: ValidationError[] } | null>(null);
   const [showNodeSelection, setShowNodeSelection] = useState(false);
+  const [showVisualization, setShowVisualization] = useState(false);
 
   useEffect(() => {
     const handleToggleNodeSelection = () => {
@@ -719,7 +721,13 @@ function DesignerInner() {
           setDiagramSvg(svg);
           setShowDiagram(true);
         }}
+        onVisualization={() => setShowVisualization(true)}
       />
+
+      {/* Visualization View overlay */}
+      {showVisualization && (
+        <VisualizationView onClose={() => setShowVisualization(false)} />
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-hidden relative">

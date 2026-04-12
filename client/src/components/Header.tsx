@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  BarChart2,
 } from "lucide-react";
 import { FlexTable } from "@/components/FlexTable";
 import {
@@ -78,6 +79,7 @@ interface HeaderProps {
   onSave: () => void;
   onLoad: () => void;
   onShowDiagram?: () => void;
+  onVisualization?: () => void;
 }
 
 export function Header({
@@ -87,6 +89,7 @@ export function Header({
   onSave,
   onLoad,
   onShowDiagram,
+  onVisualization,
 }: HeaderProps) {
   const { toast } = useToast();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -532,6 +535,13 @@ export function Header({
                   data-testid="menu-flextable"
                 >
                   <Table2 className="w-4 h-4" /> Flex Table
+                </MenubarItem>
+                <MenubarItem
+                  onClick={onVisualization}
+                  className="gap-2"
+                  data-testid="menu-visualization"
+                >
+                  <BarChart2 className="w-4 h-4" /> Visualization
                 </MenubarItem>
                 <MenubarSeparator />
                 <Dialog>

@@ -53,6 +53,7 @@ Preferred communication style: Simple, everyday language.
 - **Type-Safe API**: Route definitions include input validation and response schemas
 - **Component Architecture**: Custom React Flow node types for each hydraulic element (ReservoirNode, SimpleNode, JunctionNode, etc.)
 - **Client-Side File Generation**: INP file export logic runs in the browser for immediate feedback
+- **Visualization**: Tools → Visualization opens a full-screen overlay for loading and analyzing `.OUT` files with Profile Graph (animated HGL) and History Graph (time series). All parsing is done client-side, no server required. Components in `client/src/components/visualization/`, parsers in `client/src/lib/out-parser.ts` and `client/src/lib/history-parser.ts`.
 
 ## External Dependencies
 
