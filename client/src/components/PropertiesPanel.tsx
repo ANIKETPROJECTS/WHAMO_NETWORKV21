@@ -198,7 +198,7 @@ export function PropertiesPanel() {
     }
 
     setIsDirty(false);
-    toast({ title: "Saved", description: "Changes saved successfully." });
+    toast({ variant: "success", title: "Saved", description: "Changes saved successfully." });
   };
 
   const handleNodeNumberBlur = () => {

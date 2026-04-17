@@ -200,7 +200,7 @@ function DesignerInner() {
         const writable = await (loadedFileHandle as any).createWritable();
         await writable.write(JSON.stringify(data, null, 2));
         await writable.close();
-        toast({ title: "Project Saved", description: `Changes saved to ${projectName}.` });
+        toast({ variant: "success", title: "Project Saved", description: `Changes saved to ${projectName}.` });
         return;
       }
     } catch (err) {
@@ -211,7 +211,7 @@ function DesignerInner() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const fileName = `${projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'network'}.json`;
     saveAs(blob, fileName);
-    toast({ title: "Project Downloaded", description: "Network topology saved as JSON file." });
+    toast({ variant: "success", title: "Project Downloaded", description: "Network topology saved as JSON file." });
   };
 
   const onNodesChange = useCallback(
@@ -274,6 +274,21 @@ function DesignerInner() {
       }
 
       storeOnConnect(params);
+
+      // After connecting, check for node order violations
+      const srcNode = nodes.find(n => n.id === params.source);
+      const tgtNode = nodes.find(n => n.id === params.target);
+      if (srcNode && tgtNode) {
+        const srcNum = srcNode.data?.nodeNumber !== undefined ? Number(srcNode.data.nodeNumber) : NaN;
+        const tgtNum = tgtNode.data?.nodeNumber !== undefined ? Number(tgtNode.data.nodeNumber) : NaN;
+        if (!isNaN(srcNum) && !isNaN(tgtNum) && srcNum > tgtNum) {
+          toast({
+            variant: "warning",
+            title: "Node Order Warning",
+            description: `Node ${tgtNum} (${tgtNode.data?.label || tgtNode.id}) comes after Node ${srcNum} (${srcNode.data?.label || srcNode.id}). Node numbers must be in ascending sequence.`,
+          });
+        }
+      }
     },
     [storeOnConnect, toast, isLocked, edges, nodes]
   );
@@ -542,7 +557,12 @@ function DesignerInner() {
       const downloadName = (projectName && projectName !== "Untitled Network") ? projectName : "network";
       saveAs(blob, `${downloadName}.inp`);
       
-      toast({ title: "Files Generated", description: "WHAMO input file and System Diagram downloaded successfully." });
+      const { nodeOrderErrorIds } = useNetworkStore.getState();
+      if (nodeOrderErrorIds.length > 0) {
+        toast({ variant: "warning", title: "Files Generated with Warnings", description: `${nodeOrderErrorIds.length} node(s) have ascending-order violations. Check node numbers before running WHAMO.` });
+      } else {
+        toast({ variant: "success", title: "Files Generated", description: "WHAMO input file and System Diagram downloaded successfully." });
+      }
     } catch (err) {
       toast({ variant: "destructive", title: "Generation Failed", description: err instanceof Error ? err.message : "Could not generate files. Check connections." });
     }

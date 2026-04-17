@@ -279,6 +279,24 @@ export function validateNetwork(nodes: WhamoNode[], edges: WhamoEdge[]): { error
     }
   });
 
+  // 5. Node ascending order check: for each pipe, source nodeNumber must be < target nodeNumber
+  const _nodeById = new Map(nodes.map(n => [n.id, n]));
+  edges.forEach(e => {
+    const src = _nodeById.get(e.source);
+    const tgt = _nodeById.get(e.target);
+    if (!src || !tgt) return;
+    const srcNum = src.data?.nodeNumber !== undefined ? Number(src.data.nodeNumber) : NaN;
+    const tgtNum = tgt.data?.nodeNumber !== undefined ? Number(tgt.data.nodeNumber) : NaN;
+    if (!isNaN(srcNum) && !isNaN(tgtNum) && srcNum > tgtNum) {
+      addWarning(
+        tgt.id,
+        `Node order must be ascending. Node ${tgtNum} (${tgt.data.label}) cannot come after Node ${srcNum} (${src.data.label}) in pipe ${e.data?.label || e.id}.`,
+        tgt.data.label,
+        tgt.type
+      );
+    }
+  });
+
   // 4. Closed-loop detection between Reservoir and Surge Tank
   // Neither reservoirs nor surge tanks can be inside a cycle (both have exactly 1 connection),
   // but they may connect to nodes that form a loop. We detect every cycle in the undirected

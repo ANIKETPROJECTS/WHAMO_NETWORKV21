@@ -117,6 +117,7 @@ interface NetworkState {
   showHoverData: boolean;
   nodeSelectionSet: Set<string>;
   pcharData: Record<number, PcharType>;
+  nodeOrderErrorIds: string[];
   history: {
     past: Partial<NetworkState>[];
     future: Partial<NetworkState>[];
@@ -154,6 +155,7 @@ interface NetworkState {
   updateQSchedule: (scheduleNumber: number, points: { time: number; flow: number | string }[]) => void;
   toggleNodeSelection: (nodeId: string) => void;
   setAllNodesSelected: (selected: boolean) => void;
+  recomputeNodeOrderErrors: () => void;
   undo: () => void;
   redo: () => void;
   saveToHistory: () => void;
@@ -188,6 +190,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   showHoverData: true,
   nodeSelectionSet: new Set(),
   pcharData: {},
+  nodeOrderErrorIds: [],
   history: {
     past: [],
     future: [],
@@ -638,6 +641,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     }));
     
     set({ outputRequests: [...get().outputRequests, ...newRequests] });
+    get().recomputeNodeOrderErrors();
   },
 
   addNode: (type, position) => {
@@ -748,6 +752,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         node.id === id ? { ...node, data: { ...node.data, ...data } } as WhamoNode : node
       ),
     });
+    if ('nodeNumber' in data) get().recomputeNodeOrderErrors();
   },
 
   updateEdgeData: (id, data) => {
@@ -936,7 +941,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       selectedElementId: null, 
       selectedElementType: null 
     });
-
+    get().recomputeNodeOrderErrors();
   },
 
   clearNetwork: () => {
@@ -1053,6 +1058,23 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     } else {
       set({ nodeSelectionSet: new Set() });
     }
+  },
+
+  recomputeNodeOrderErrors: () => {
+    const { nodes, edges } = get();
+    const errorIds = new Set<string>();
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    edges.forEach(e => {
+      const src = nodeById.get(e.source);
+      const tgt = nodeById.get(e.target);
+      if (!src || !tgt) return;
+      const srcNum = src.data?.nodeNumber !== undefined ? Number(src.data.nodeNumber) : NaN;
+      const tgtNum = tgt.data?.nodeNumber !== undefined ? Number(tgt.data.nodeNumber) : NaN;
+      if (!isNaN(srcNum) && !isNaN(tgtNum) && srcNum > tgtNum) {
+        errorIds.add(tgt.id);
+      }
+    });
+    set({ nodeOrderErrorIds: [...errorIds] });
   },
 
   addOutputRequest: (request) => {
