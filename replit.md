@@ -85,4 +85,4 @@ Preferred communication style: Simple, everyday language.
 - Workflow: `Start application` runs `npm run dev` and exposes port 5000 as a webview
 - Deployment build: `npm run build` → `node ./dist/index.cjs`
 - No database is required — in-memory storage is used
-- The WHAMO engine (`server/engines/WHAMO.EXE`) requires `wine` to run on Linux
+- The WHAMO engine (`server/engines/WHAMO.EXE`) requires `wine` to run on Linux and is executed in an isolated temporary directory without invoking a shell

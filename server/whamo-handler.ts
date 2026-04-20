@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import path from "path";
 import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
@@ -11,12 +11,19 @@ export function setupWhamoRoutes(app: any) {
 
   app.post("/api/generate-out", async (req: any, res: any) => {
     const { inpContent } = req.body;
-    if (!inpContent) {
+    if (typeof inpContent !== "string" || inpContent.length === 0) {
       return res.status(400).json({ success: false, error: "No INP content provided" });
+    }
+
+    if (!fs.existsSync(enginePath)) {
+      return res.status(500).json({ success: false, error: "WHAMO engine is not available on the server" });
     }
 
     const tempId = uuidv4();
     const runDir = path.join(tempDir, tempId);
+    const cleanup = () => {
+      fs.rmSync(runDir, { recursive: true, force: true });
+    };
     
     try {
       fs.mkdirSync(runDir, { recursive: true });
@@ -28,14 +35,13 @@ export function setupWhamoRoutes(app: any) {
       fs.copyFileSync(enginePath, localExePath);
       fs.writeFileSync(localInpPath, inpContent);
 
-      // 2. Run wine whamo.exe
-      const command = `wine whamo.exe`;
       // 3. Pass filenames via stdin
       const stdinContent = `input.inp\ninput_OUT.OUT\ninput_PLT.PLT\ninput_SHEET.TAB\n`;
 
-      const child = exec(command, { cwd: runDir, timeout: 60000, maxBuffer: 1024 * 1024 * 100 }, (error, stdout, stderr) => {
+      const child = execFile("wine", ["whamo.exe"], { cwd: runDir, timeout: 60000, maxBuffer: 1024 * 1024 * 100 }, (error, stdout, stderr) => {
         if (error) {
           console.error("WHAMO execution error:", error);
+          cleanup();
           return res.status(500).json({
             success: false,
             error: "WHAMO execution failed",
@@ -62,8 +68,7 @@ export function setupWhamoRoutes(app: any) {
         } catch (readError: any) {
           res.status(500).json({ success: false, error: "Error reading results", details: readError.message });
         } finally {
-          // Cleanup
-          fs.rmSync(runDir, { recursive: true, force: true });
+          cleanup();
         }
       });
 
@@ -74,7 +79,7 @@ export function setupWhamoRoutes(app: any) {
     } catch (err: any) {
       console.error("Setup error:", err);
       res.status(500).json({ success: false, error: "Internal server error", details: err.message });
-      if (fs.existsSync(runDir)) fs.rmSync(runDir, { recursive: true, force: true });
+      cleanup();
     }
   });
 
