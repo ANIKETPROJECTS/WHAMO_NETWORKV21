@@ -175,6 +175,43 @@ export function PropertiesPanel() {
     });
 
     if (isNodeEl) {
+      const thisNode = nodes.find(n => n.id === selectedElementId);
+      const elementTypes = new Set(['pump', 'checkValve']);
+
+      // Block save if new nodeNumber violates ascending order for non-element nodes
+      if (thisNode && !elementTypes.has(thisNode.type!)) {
+        const newNum = processedData.nodeNumber !== undefined ? Number(processedData.nodeNumber) : NaN;
+        if (!isNaN(newNum)) {
+          const violations: string[] = [];
+          edges.forEach(e => {
+            if (e.source === selectedElementId) {
+              const tgt = nodes.find(n => n.id === e.target);
+              if (!tgt || elementTypes.has(tgt.type!)) return;
+              const tgtNum = tgt.data?.nodeNumber !== undefined ? Number(tgt.data.nodeNumber) : NaN;
+              if (!isNaN(tgtNum) && newNum > tgtNum) {
+                violations.push(`Node ${tgtNum} (${tgt.data.label}) comes after but has a lower number.`);
+              }
+            }
+            if (e.target === selectedElementId) {
+              const src = nodes.find(n => n.id === e.source);
+              if (!src || elementTypes.has(src.type!)) return;
+              const srcNum = src.data?.nodeNumber !== undefined ? Number(src.data.nodeNumber) : NaN;
+              if (!isNaN(srcNum) && srcNum > newNum) {
+                violations.push(`Node ${srcNum} (${src.data.label}) comes before but has a higher number.`);
+              }
+            }
+          });
+          if (violations.length > 0) {
+            toast({
+              variant: "destructive",
+              title: "Invalid Node Number",
+              description: `Node number ${newNum} violates ascending order: ${violations[0]} Node numbers must increase along the flow direction.`,
+            });
+            return;
+          }
+        }
+      }
+
       // For flowBoundary nodes, link schedulePoints to the global qSchedules for the (possibly changed) scheduleNumber
       if (element?.data?.type === 'flowBoundary' && processedData.scheduleNumber !== undefined) {
         const newSchedNum = Number(processedData.scheduleNumber);
