@@ -649,27 +649,33 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     const id = getId();
     let initialData: NodeData = { label: '', type };
 
-    // Compute nodeNumber as max existing nodeNumber + 1 so that manually
-    // reassigned numbers never collide with the auto-assigned ones.
-    const existingNumbers = get().nodes
-      .filter(n => n.data?.nodeNumber !== undefined)
+    // Pumps and check valves are hydraulic elements, not topological nodes.
+    // Only real nodes participate in the sequential node-number pool.
+    const realNodeTypes = new Set(['reservoir', 'node', 'junction', 'surgeTank', 'flowBoundary']);
+    const elementTypes = new Set(['pump', 'checkValve']);
+
+    // Compute the next gap-free sequential number using only real-node numbers.
+    const realNodeNums = get().nodes
+      .filter(n => realNodeTypes.has(n.type!) && n.data?.nodeNumber !== undefined)
       .map(n => n.data.nodeNumber as number);
-    const nodeNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    const realNumSet = new Set(realNodeNums);
+    let nextNodeNum = 1;
+    while (realNumSet.has(nextNodeNum)) nextNodeNum++;
 
     let newPumpTypeToInit: number | null = null;
 
     switch (type) {
       case 'reservoir':
-        initialData = { ...initialData, label: 'HW', nodeNumber };
+        initialData = { ...initialData, label: 'HW', nodeNumber: nextNodeNum };
         break;
       case 'node':
-        initialData = { ...initialData, label: `Node ${nodeNumber}`, nodeNumber };
+        initialData = { ...initialData, label: `Node ${nextNodeNum}`, nodeNumber: nextNodeNum };
         break;
       case 'junction':
-        initialData = { ...initialData, label: `Node ${nodeNumber}`, nodeNumber };
+        initialData = { ...initialData, label: `Node ${nextNodeNum}`, nodeNumber: nextNodeNum };
         break;
       case 'surgeTank':
-        initialData = { ...initialData, label: 'ST', nodeNumber };
+        initialData = { ...initialData, label: 'ST', nodeNumber: nextNodeNum };
         break;
       case 'flowBoundary': {
         const existingFBNums = get().nodes
@@ -677,19 +683,21 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
           .map(n => n.data.scheduleNumber as number);
         const scheduleNumber = existingFBNums.length > 0 ? Math.max(...existingFBNums) + 1 : 1;
         const existingQPoints = get().qSchedules[scheduleNumber] || [];
-        initialData = { ...initialData, label: `FB${id}`, nodeNumber, scheduleNumber, schedulePoints: existingQPoints };
+        initialData = { ...initialData, label: `FB${id}`, nodeNumber: nextNodeNum, scheduleNumber, schedulePoints: existingQPoints };
         break;
       }
       case 'pump': {
         const pumpCount = get().nodes.filter(n => n.type === 'pump').length + 1;
         const existingTypes = Object.keys(get().pcharData).map(Number);
         newPumpTypeToInit = existingTypes.length > 0 ? Math.max(...existingTypes) + 1 : 1;
-        initialData = { ...initialData, label: `P${pumpCount}`, nodeNumber, pumpStatus: 'ACTIVE', pumpType: newPumpTypeToInit };
+        // Pumps have no nodeNumber — their INP position is computed at generation time
+        initialData = { ...initialData, label: `P${pumpCount}`, pumpStatus: 'ACTIVE', pumpType: newPumpTypeToInit };
         break;
       }
       case 'checkValve': {
         const cvCount = get().nodes.filter(n => n.type === 'checkValve').length + 1;
-        initialData = { ...initialData, label: `VC${cvCount}`, nodeNumber, valveStatus: 'OPEN' };
+        // Check valves have no nodeNumber — their INP position is computed at generation time
+        initialData = { ...initialData, label: `VC${cvCount}`, valveStatus: 'OPEN' };
         break;
       }
     }

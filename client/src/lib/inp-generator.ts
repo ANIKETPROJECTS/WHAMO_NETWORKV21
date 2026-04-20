@@ -47,6 +47,20 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
   const connectivityLines: string[] = [];
   const nodeIdsWithSpecialElements = new Set<string>();
 
+  // Build a sequential position map by traversal order.
+  // Real nodes are sorted by their stored nodeNumber so user-assigned ordering is respected.
+  // Pumps and valves (which have no stored nodeNumber) receive positions interpolated between
+  // their real-node neighbors as the traversal reaches them.
+  const positionMap = new Map<string, string>(); // nodeId → INP sequential position string
+  let positionCounter = 1;
+
+  function getPosition(nodeId: string): string {
+    if (!positionMap.has(nodeId)) {
+      positionMap.set(nodeId, String(positionCounter++));
+    }
+    return positionMap.get(nodeId)!;
+  }
+
   function traverse(nodeId: string) {
     if (visitedNodes.has(nodeId)) return;
     visitedNodes.add(nodeId);
@@ -54,7 +68,7 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    const actualNodeId = node.data.nodeNumber?.toString() || node.id;
+    const actualNodeId = getPosition(nodeId);
 
     // Elements AT this node
     if (node.type === 'reservoir' || node.type === 'surgeTank' || node.type === 'flowBoundary' || node.type === 'pump' || node.type === 'checkValve') {
@@ -62,8 +76,16 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
       nodeIdsWithSpecialElements.add(actualNodeId);
     }
 
-    // Outgoing edges
-    const outgoingEdges = edges.filter(e => e.source === nodeId);
+    // Outgoing edges — sort by target's stored nodeNumber for deterministic ordering
+    const outgoingEdges = edges
+      .filter(e => e.source === nodeId)
+      .sort((a, b) => {
+        const ta = nodes.find(n => n.id === a.target);
+        const tb = nodes.find(n => n.id === b.target);
+        const na = ta?.data?.nodeNumber ?? Infinity;
+        const nb = tb?.data?.nodeNumber ?? Infinity;
+        return (na as number) - (nb as number);
+      });
     
     if (outgoingEdges.length > 0) {
       if (node.type === 'junction' || outgoingEdges.length > 1) {
@@ -77,8 +99,7 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
         if (visitedEdges.has(edge.id)) return;
         visitedEdges.add(edge.id);
         
-        const toNode = nodes.find(n => n.id === edge.target);
-        const toId = toNode?.data.nodeNumber?.toString() || toNode?.id || edge.target;
+        const toId = getPosition(edge.target);
         const fromId = actualNodeId;
 
         connectivityLines.push(`ELEM ${edge.data?.label || edge.id} LINK ${fromId} ${toId}`);
@@ -87,8 +108,10 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
     }
   }
 
-  // Start traversal from all nodes that have no incoming edges (potential sources)
-  const sourceNodes = nodes.filter(n => !edges.some(e => e.target === n.id));
+  // Start traversal from source nodes, sorted by stored nodeNumber so the sequence is predictable
+  const sourceNodes = nodes
+    .filter(n => !edges.some(e => e.target === n.id))
+    .sort((a, b) => (a.data?.nodeNumber ?? Infinity) - (b.data?.nodeNumber ?? Infinity));
   if (sourceNodes.length > 0) {
     sourceNodes.forEach(s => traverse(s.id));
   } else if (nodes.length > 0) {
@@ -134,7 +157,7 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
   const branchPatterns = new Set<string>();
 
   const allNodeIds = Array.from(new Set([
-    ...nodes.map(n => n.data.nodeNumber?.toString() || n.id),
+    ...nodes.map(n => positionMap.get(n.id) ?? n.id),
     ...Array.from(nodeIdsWithSpecialElements)
   ]));
 
@@ -171,7 +194,7 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
   });
 
   sortedNodeIds.forEach(id => {
-    const node = nodes.find(n => (n.data.nodeNumber?.toString() || n.id) === id);
+    const node = nodes.find(n => (positionMap.get(n.id) ?? n.id) === id);
     if (node && node.data.elevation !== undefined) {
       const isSelected = nodeSelectionSet.size > 0 && nodeSelectionSet.has(id);
       if (isSelected) {
@@ -494,7 +517,7 @@ export function generateInpFile(nodes: WhamoNode[], edges: WhamoEdge[], autoDown
         
         const label = useElementRequest 
           ? (element?.data?.label || element?.id || req.elementId)
-          : (element?.data?.nodeNumber || element?.data?.label || element?.id || req.elementId);
+          : (positionMap.get(element?.id ?? '') || element?.data?.nodeNumber || element?.data?.label || element?.id || req.elementId);
         const typeStr = useElementRequest ? 'ELEM' : 'NODE';
         addL(` ${typeStr} ${label} ${req.variables.join(' ')}`);
       });
